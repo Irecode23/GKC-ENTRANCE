@@ -9,9 +9,33 @@ const connectDB = require('./config/db');
 const app = express();
 const server = http.createServer(app);
 
+const allowedOrigins = [
+  'http://localhost:5173',
+  'https://gkcee.vercel.app',
+  process.env.CLIENT_URL,
+  process.env.CLIENT_URL?.replace(/\/$/, ''),
+];
+
+const corsOptions = {
+  origin: function (origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
+};
+
 const io = new Server(server, {
   cors: {
-    origin: process.env.CLIENT_URL || 'http://localhost:5173',
+    origin: function (origin, callback) {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
     methods: ['GET', 'POST'],
     credentials: true,
   },
@@ -21,10 +45,7 @@ const io = new Server(server, {
 app.set('io', io);
 
 // Middleware
-app.use(cors({
-  origin: process.env.CLIENT_URL || 'http://localhost:5173',
-  credentials: true,
-}));
+app.use(cors(corsOptions));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -48,7 +69,6 @@ io.on('connection', (socket) => {
   });
 
   socket.on('candidate:update', (data) => {
-    // Broadcast candidate status to admin room
     io.to('admin-room').emit('candidate:status', data);
   });
 
@@ -66,7 +86,10 @@ io.on('connection', (socket) => {
 });
 
 // Connect DB and start
-connectDB().then(() => {
+const startServer = async () => {
+  await connectDB();
   const PORT = process.env.PORT || 5000;
   server.listen(PORT, () => console.log(`GKC CBT Server running on port ${PORT}`));
-});
+};
+
+startServer();
