@@ -1,0 +1,14 @@
+# Backend
+backend/node_modules
+backend/.env
+backend/utils/seedAdmin.js
+backend/utils/seedSubjects.js
+
+# Frontend
+frontend/node_modules
+frontend/.env
+frontend/dist
+
+# General
+.DS_Store
+*.log

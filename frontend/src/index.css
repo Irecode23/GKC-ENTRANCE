@@ -1,0 +1,40 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Inter', sans-serif;
+  background-color: #f8faf9;
+  color: #1a1a1a;
+}
+
+/* Prevent text selection during exam */
+.exam-mode {
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+}
+
+.exam-mode * {
+  -webkit-touch-callout: none;
+}
+
+/* Question palette */
+.palette-btn {
+  @apply w-9 h-9 text-xs font-semibold rounded flex items-center justify-center cursor-pointer transition-all;
+}
+.palette-btn.not-visited { @apply bg-gray-200 text-gray-700 hover:bg-gray-300; }
+.palette-btn.visited { @apply bg-yellow-400 text-yellow-900; }
+.palette-btn.answered { @apply bg-green-500 text-white; }
+.palette-btn.flagged { @apply bg-purple-500 text-white ring-2 ring-purple-300; }
+.palette-btn.current { @apply ring-2 ring-brand-green; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: #f1f1f1; }
+::-webkit-scrollbar-thumb { background: #c1c1c1; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #999; }
