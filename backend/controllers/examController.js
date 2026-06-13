@@ -16,6 +16,31 @@ const shuffle = (arr) => {
   return a;
 };
 
+// Helper: shuffle within sections only
+const shuffleWithinSections = (questions) => {
+  // Group questions by section
+  const sections = {};
+  const sectionOrder = [];
+
+  questions.forEach((q) => {
+    const sectionKey = q.section || '__no_section__';
+    if (!sections[sectionKey]) {
+      sections[sectionKey] = [];
+      sectionOrder.push(sectionKey);
+    }
+    sections[sectionKey].push(q);
+  });
+
+  // Shuffle within each section, then join back
+  const result = [];
+  sectionOrder.forEach((sectionKey) => {
+    const shuffled = shuffle(sections[sectionKey]);
+    result.push(...shuffled);
+  });
+
+  return result;
+};
+
 // Helper: grade and save result
 const gradeExam = async (studentId, studentObjectId) => {
   const subjects = await Subject.find({ isActive: true });
@@ -61,7 +86,15 @@ const gradeExam = async (studentId, studentObjectId) => {
 
   await Result.findOneAndUpdate(
     { student: studentObjectId },
-    { student: studentObjectId, subjectResults, totalObtainable, totalMarksObtained: totalObtained, totalPercentage, status, gradedAt: new Date() },
+    {
+      student: studentObjectId,
+      subjectResults,
+      totalObtainable,
+      totalMarksObtained: totalObtained,
+      totalPercentage,
+      status,
+      gradedAt: new Date(),
+    },
     { upsert: true, new: true }
   );
 };
@@ -96,15 +129,27 @@ const startExam = async (req, res) => {
     const questionOrder = [];
 
     for (const subject of subjects) {
-      const questions = await Question.find({ subject: subject._id, isActive: true });
-      const shuffled = shuffle(questions.map((q) => q._id));
-      questionOrder.push({ subject: subject._id, questions: shuffled });
+      // Get questions sorted by section and order
+      const questions = await Question.find({ subject: subject._id, isActive: true })
+        .sort({ section: 1, order: 1 });
+
+      // Shuffle within sections only
+      const shuffled = shuffleWithinSections(questions);
+      const shuffledIds = shuffled.map((q) => q._id);
+
+      questionOrder.push({ subject: subject._id, questions: shuffledIds });
 
       // Pre-create answer records (not_visited)
-      for (const qId of shuffled) {
+      for (const qId of shuffledIds) {
         await Answer.findOneAndUpdate(
           { student: student._id, question: qId },
-          { student: student._id, question: qId, subject: subject._id, visitStatus: 'not_visited', selectedOption: null },
+          {
+            student: student._id,
+            question: qId,
+            subject: subject._id,
+            visitStatus: 'not_visited',
+            selectedOption: null,
+          },
           { upsert: true }
         );
       }
@@ -136,13 +181,16 @@ const getExamQuestions = async (req, res) => {
     }
 
     // Get ordered questions from session
-    const subjectOrder = session.questionOrder.find((so) => so.subject.toString() === subjectId);
+    const subjectOrder = session.questionOrder.find(
+      (so) => so.subject.toString() === subjectId
+    );
 
     let questions;
     if (subjectOrder && subjectOrder.questions.length > 0) {
       const orderedIds = subjectOrder.questions;
       const questionDocs = await Question.find({ _id: { $in: orderedIds } })
         .select('-correctAnswer -questionImagePublicId');
+
       // Re-order by session order
       const map = {};
       questionDocs.forEach((q) => { map[q._id.toString()] = q; });
@@ -150,7 +198,7 @@ const getExamQuestions = async (req, res) => {
     } else {
       questions = await Question.find({ subject: subjectId, isActive: true })
         .select('-correctAnswer -questionImagePublicId')
-        .sort({ order: 1 });
+        .sort({ section: 1, order: 1 });
     }
 
     // Get saved answers for this student + subject
@@ -166,7 +214,11 @@ const getExamQuestions = async (req, res) => {
 
     const questionsWithAnswers = questions.map((q) => ({
       ...q.toObject(),
-      savedAnswer: answerMap[q._id.toString()] || { selectedOption: null, isFlagged: false, visitStatus: 'not_visited' },
+      savedAnswer: answerMap[q._id.toString()] || {
+        selectedOption: null,
+        isFlagged: false,
+        visitStatus: 'not_visited',
+      },
     }));
 
     res.json(questionsWithAnswers);
@@ -203,15 +255,6 @@ const saveAnswer = async (req, res) => {
       { upsert: true, new: true }
     );
 
-    // Log significant actions
-    if (visitStatus === 'answered') {
-      await ActivityLog.create({
-        student: student._id,
-        action: `Answered Question`,
-        details: `Question ID: ${questionId}`,
-      });
-    }
-
     res.json({ message: 'Answer saved', answer });
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
@@ -242,16 +285,20 @@ const submitExam = async (req, res) => {
 
     await ActivityLog.create({
       student: student._id,
-      action: session.autoSubmitted ? 'Exam Auto-Submitted (Time Elapsed)' : 'Submitted Examination',
+      action: session.autoSubmitted
+        ? 'Exam Auto-Submitted (Time Elapsed)'
+        : 'Submitted Examination',
     });
 
-    res.json({ message: 'Your examination has been submitted successfully. Thank you for participating in the entrance examination.' });
+    res.json({
+      message: 'Your examination has been submitted successfully. Thank you for participating in the entrance examination.',
+    });
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
   }
 };
 
-// Log security event (tab switch, fullscreen exit)
+// Log security event
 const logSecurityEvent = async (req, res) => {
   try {
     const student = req.student;

@@ -1,9 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import AdminLayout from '../../components/admin/AdminLayout';
 import api from '../../utils/api';
+import ReactQuill from 'react-quill';
+import 'react-quill/dist/quill.snow.css';
 
 const emptyForm = {
   subject: '',
+  section: '',
+  sectionInstruction: '',
   questionText: '',
   optionA: '', optionB: '', optionC: '', optionD: '',
   correctAnswer: 'A',
@@ -13,6 +17,16 @@ const emptyForm = {
 
 const OPTIONS = ['A', 'B', 'C', 'D'];
 
+const quillModules = {
+  toolbar: [
+    ['bold', 'italic', 'underline'],
+    [{ list: 'ordered' }, { list: 'bullet' }],
+    ['clean'],
+  ],
+};
+
+const quillFormats = ['bold', 'italic', 'underline', 'list', 'bullet'];
+
 export default function AdminQuestions() {
   const [subjects, setSubjects] = useState([]);
   const [selectedSubject, setSelectedSubject] = useState('');
@@ -21,7 +35,7 @@ export default function AdminQuestions() {
   const [showForm, setShowForm] = useState(false);
   const [editingQ, setEditingQ] = useState(null);
   const [form, setForm] = useState(emptyForm);
-  const [images, setImages] = useState({});   // { questionImage, optionAImage, ... }
+  const [images, setImages] = useState({});
   const [previews, setPreviews] = useState({});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -58,6 +72,8 @@ export default function AdminQuestions() {
     setEditingQ(q);
     setForm({
       subject: q.subject._id || q.subject,
+      section: q.section || '',
+      sectionInstruction: q.sectionInstruction || '',
       questionText: q.questionText || '',
       optionA: q.optionA, optionB: q.optionB, optionC: q.optionC, optionD: q.optionD,
       correctAnswer: q.correctAnswer,
@@ -81,7 +97,8 @@ export default function AdminQuestions() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!form.questionText && !images.questionImage && !(editingQ?.questionImage)) {
+    const plainText = form.questionText.replace(/<[^>]+>/g, '').trim();
+    if (!plainText && !images.questionImage && !(editingQ?.questionImage)) {
       return setError('Question must have either text or an image.');
     }
     setSaving(true);
@@ -104,7 +121,6 @@ export default function AdminQuestions() {
         setSuccess('Question added.');
       }
       setShowForm(false);
-      // Reload questions
       const { data } = await api.get(`/questions/subject/${selectedSubject}`);
       setQuestions(data);
     } catch (err) {
@@ -192,18 +208,52 @@ export default function AdminQuestions() {
           {error && <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg mb-4">{error}</p>}
 
           <form onSubmit={handleSubmit} className="space-y-5">
-            {/* Question text */}
+
+            {/* Section */}
+            <div className="p-4 bg-blue-50 rounded-xl border border-blue-100 space-y-4">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  Section
+                  <span className="text-gray-400 font-normal ml-1">(optional — e.g. Section A)</span>
+                </label>
+                <input
+                  value={form.section}
+                  onChange={(e) => setForm({ ...form, section: e.target.value })}
+                  placeholder="e.g. Section A — Comprehension"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-green"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  Section Instruction
+                  <span className="text-gray-400 font-normal ml-1">(optional — supports bold, italic, underline)</span>
+                </label>
+                <ReactQuill
+                  theme="snow"
+                  value={form.sectionInstruction}
+                  onChange={(value) => setForm({ ...form, sectionInstruction: value })}
+                  modules={quillModules}
+                  formats={quillFormats}
+                  placeholder="e.g. Read the passage carefully and answer the questions below..."
+                  className="bg-white rounded-xl"
+                />
+              </div>
+            </div>
+
+            {/* Question text with rich editor */}
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">
                 Question Text
-                <span className="text-gray-400 font-normal ml-1">(leave blank if question is image-only)</span>
+                <span className="text-gray-400 font-normal ml-1">(supports bold, italic, underline)</span>
               </label>
-              <textarea
+              <ReactQuill
+                theme="snow"
                 value={form.questionText}
-                onChange={(e) => setForm({ ...form, questionText: e.target.value })}
-                rows={3}
+                onChange={(value) => setForm({ ...form, questionText: value })}
+                modules={quillModules}
+                formats={quillFormats}
                 placeholder="Type the question here..."
-                className="w-full px-3 py-2 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-green resize-none"
+                className="bg-white rounded-xl"
               />
             </div>
 
@@ -229,7 +279,7 @@ export default function AdminQuestions() {
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-2">
                 Answer Options *
-                <span className="text-gray-400 font-normal ml-1">(select the correct answer on the right)</span>
+                <span className="text-gray-400 font-normal ml-1">(click the letter to mark as correct answer)</span>
               </label>
               <div className="space-y-3">
                 {OPTIONS.map((opt) => (
@@ -244,19 +294,20 @@ export default function AdminQuestions() {
                           ? 'bg-brand-green text-white'
                           : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
                       }`}
-                      title={`Mark ${opt} as correct`}
                     >
                       {opt}
                     </button>
                     <div className="flex-1 space-y-2">
-                      <input
-                        required
+                      <ReactQuill
+                        theme="snow"
                         value={form[`option${opt}`]}
-                        onChange={(e) => setForm({ ...form, [`option${opt}`]: e.target.value })}
+                        onChange={(value) => setForm({ ...form, [`option${opt}`]: value })}
+                        modules={quillModules}
+                        formats={quillFormats}
                         placeholder={`Option ${opt} text`}
-                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand-green"
+                        className="bg-white rounded-lg"
                       />
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 mt-1">
                         <input
                           type="file"
                           accept="image/*"
@@ -283,9 +334,7 @@ export default function AdminQuestions() {
             {/* Mark allocation + order */}
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">
-                  Mark Allocation *
-                </label>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Mark Allocation *</label>
                 <input
                   required
                   type="number"
@@ -348,8 +397,16 @@ export default function AdminQuestions() {
                   {idx + 1}
                 </span>
                 <div className="flex-1 min-w-0">
+                  {q.section && (
+                    <span className="inline-block px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full mb-1 font-medium">
+                      {q.section}
+                    </span>
+                  )}
                   {q.questionText && (
-                    <p className="text-sm text-gray-800 mb-1 line-clamp-2">{q.questionText}</p>
+                    <div
+                      className="text-sm text-gray-800 mb-1 line-clamp-2"
+                      dangerouslySetInnerHTML={{ __html: q.questionText }}
+                    />
                   )}
                   {q.questionImage && (
                     <img src={q.questionImage} alt="Q" className="h-12 rounded border mb-1" />
@@ -364,7 +421,8 @@ export default function AdminQuestions() {
                             : 'bg-gray-100'
                         }`}
                       >
-                        {opt}: {q[`option${opt}`]}
+                        {opt}:&nbsp;
+                        <span dangerouslySetInnerHTML={{ __html: q[`option${opt}`] }} />
                       </span>
                     ))}
                     <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-600">

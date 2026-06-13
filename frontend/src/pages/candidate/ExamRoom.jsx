@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import api from '../../utils/api';
@@ -14,49 +14,42 @@ export default function ExamRoom() {
   const [activeSubjectIdx, setActiveSubjectIdx] = useState(0);
   const [questions, setQuestions] = useState([]);
   const [currentQIdx, setCurrentQIdx] = useState(0);
-  const [timeLeft, setTimeLeft] = useState(7200); // 2 hours in seconds
+  const [timeLeft, setTimeLeft] = useState(7200);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [answerMap, setAnswerMap] = useState({});
   const socketRef = useRef(null);
   const timerRef = useRef(null);
   const saveTimeoutRef = useRef(null);
 
-  // All answers map: questionId -> { selectedOption, visitStatus, isFlagged }
-  const [answerMap, setAnswerMap] = useState({});
-
-  // ── Security: full screen + tab monitoring ────────────────────
+  // ── Security ─────────────────────────────────────────────────
   useEffect(() => {
     document.documentElement.requestFullscreen?.().catch(() => {});
 
     const handleVisibilityChange = () => {
-      if (document.hidden) {
-        logSecurityEvent('Tab Switched', 'Candidate switched tab or minimized');
-      }
+      if (document.hidden) logSecurityEvent('Tab Switched', 'Candidate switched tab or minimized');
     };
     const handleFullscreenChange = () => {
-      if (!document.fullscreenElement) {
-        logSecurityEvent('Fullscreen Exit', 'Candidate exited full screen');
-      }
+      if (!document.fullscreenElement) logSecurityEvent('Fullscreen Exit', 'Candidate exited full screen');
     };
-    const disableContextMenu = (e) => e.preventDefault();
-    const disableCopy = (e) => e.preventDefault();
+    const prevent = (e) => e.preventDefault();
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
     document.addEventListener('fullscreenchange', handleFullscreenChange);
-    document.addEventListener('contextmenu', disableContextMenu);
-    document.addEventListener('copy', disableCopy);
-    document.addEventListener('cut', disableCopy);
-    document.addEventListener('paste', disableCopy);
+    document.addEventListener('contextmenu', prevent);
+    document.addEventListener('copy', prevent);
+    document.addEventListener('cut', prevent);
+    document.addEventListener('paste', prevent);
 
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       document.removeEventListener('fullscreenchange', handleFullscreenChange);
-      document.removeEventListener('contextmenu', disableContextMenu);
-      document.removeEventListener('copy', disableCopy);
-      document.removeEventListener('cut', disableCopy);
-      document.removeEventListener('paste', disableCopy);
+      document.removeEventListener('contextmenu', prevent);
+      document.removeEventListener('copy', prevent);
+      document.removeEventListener('cut', prevent);
+      document.removeEventListener('paste', prevent);
     };
   }, []);
 
@@ -67,7 +60,7 @@ export default function ExamRoom() {
     } catch {}
   };
 
-  // ── Socket.IO ────────────────────────────────────────────────
+  // ── Socket.IO ─────────────────────────────────────────────────
   useEffect(() => {
     socketRef.current = io(SOCKET_URL, { transports: ['websocket', 'polling'] });
     return () => socketRef.current?.disconnect();
@@ -79,15 +72,11 @@ export default function ExamRoom() {
       try {
         const { data } = await api.post('/exam/start');
         setSubjects(data.subjects);
-
-        // Time remaining
         if (data.recovered && data.session.timeRemaining) {
           setTimeLeft(data.session.timeRemaining);
         } else {
           setTimeLeft(data.session.examDuration || 7200);
         }
-
-        // Load questions for first subject
         if (data.subjects.length > 0) {
           await loadSubjectQuestions(data.subjects[0]._id);
         }
@@ -100,7 +89,7 @@ export default function ExamRoom() {
     initExam();
   }, []);
 
-  // ── Timer ────────────────────────────────────────────────────
+  // ── Timer ─────────────────────────────────────────────────────
   useEffect(() => {
     if (loading) return;
     timerRef.current = setInterval(() => {
@@ -113,7 +102,6 @@ export default function ExamRoom() {
         return prev - 1;
       });
     }, 1000);
-
     return () => clearInterval(timerRef.current);
   }, [loading]);
 
@@ -124,14 +112,12 @@ export default function ExamRoom() {
     return `${h}:${m}:${s}`;
   };
 
-  // ── Load questions for a subject ──────────────────────────────
+  // ── Load questions ────────────────────────────────────────────
   const loadSubjectQuestions = async (subjectId) => {
     try {
       const { data } = await api.get(`/exam/questions/${subjectId}`);
       setQuestions(data);
       setCurrentQIdx(0);
-
-      // Merge saved answers into answerMap
       const newMap = { ...answerMap };
       data.forEach((q) => {
         if (!newMap[q._id]) {
@@ -150,15 +136,13 @@ export default function ExamRoom() {
     await loadSubjectQuestions(subjects[idx]._id);
   };
 
-  // ── Select answer ─────────────────────────────────────────────
+  // ── Answer handling ───────────────────────────────────────────
   const selectOption = (questionId, option) => {
     const updated = {
       ...answerMap,
       [questionId]: { ...answerMap[questionId], selectedOption: option, visitStatus: 'answered' },
     };
     setAnswerMap(updated);
-
-    // Debounced save
     clearTimeout(saveTimeoutRef.current);
     saveTimeoutRef.current = setTimeout(() => {
       saveAnswerToServer(questionId, option, updated[questionId]?.isFlagged, 'answered');
@@ -178,7 +162,6 @@ export default function ExamRoom() {
     setSaving(false);
   };
 
-  // ── Flag question ─────────────────────────────────────────────
   const toggleFlag = (questionId) => {
     const current = answerMap[questionId] || {};
     const updated = { ...answerMap, [questionId]: { ...current, isFlagged: !current.isFlagged } };
@@ -186,7 +169,6 @@ export default function ExamRoom() {
     saveAnswerToServer(questionId, current.selectedOption, !current.isFlagged, current.visitStatus);
   };
 
-  // ── Clear answer ──────────────────────────────────────────────
   const clearAnswer = (questionId) => {
     const current = answerMap[questionId] || {};
     const updated = { ...answerMap, [questionId]: { ...current, selectedOption: null, visitStatus: 'visited' } };
@@ -194,7 +176,6 @@ export default function ExamRoom() {
     saveAnswerToServer(questionId, null, current.isFlagged, 'visited');
   };
 
-  // ── Mark as visited when navigating ───────────────────────────
   const goToQuestion = (idx) => {
     const q = questions[currentQIdx];
     if (q) {
@@ -233,11 +214,30 @@ export default function ExamRoom() {
     } catch {}
   };
 
+  // ── Check if section changes from previous question ───────────
+  const getSectionHeader = (idx) => {
+    const current = questions[idx];
+    if (!current?.section) return null;
+    if (idx === 0) return current.section;
+    const prev = questions[idx - 1];
+    if (prev?.section !== current.section) return current.section;
+    return null;
+  };
+
+  const getSectionInstruction = (idx) => {
+    const current = questions[idx];
+    if (!current?.sectionInstruction) return null;
+    if (idx === 0) return current.sectionInstruction;
+    const prev = questions[idx - 1];
+    if (prev?.section !== current.section) return current.sectionInstruction;
+    return null;
+  };
+
   if (loading) {
     return (
-      <div className="min-h-screen bg-brand-light flex items-center justify-center">
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
-          <div className="w-12 h-12 border-4 border-brand-green border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <div className="w-12 h-12 border-4 border-green-700 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
           <p className="text-gray-600">Loading your examination...</p>
         </div>
       </div>
@@ -257,10 +257,14 @@ export default function ExamRoom() {
     return 'visited';
   };
 
+  // Group palette by section
+  const getPaletteSection = (q) => q.section || '';
+
   return (
     <div className="exam-mode min-h-screen bg-gray-100 flex flex-col select-none">
-      {/* ── Header ────────────────────────────────────────────── */}
-      <header className="bg-brand-green text-white px-4 py-3 flex items-center justify-between shadow-md sticky top-0 z-30">
+
+      {/* ── Header ───────────────────────────────────────────── */}
+      <header className="bg-green-800 text-white px-4 py-3 flex items-center justify-between shadow-md sticky top-0 z-30">
         <div>
           <p className="text-xs opacity-70">Candidate</p>
           <p className="font-semibold text-sm">{student?.fullName}</p>
@@ -276,7 +280,7 @@ export default function ExamRoom() {
         </div>
       </header>
 
-      {/* ── Subject Tabs ───────────────────────────────────────── */}
+      {/* ── Subject Tabs ─────────────────────────────────────── */}
       <div className="bg-white border-b shadow-sm sticky top-16 z-20">
         <div className="flex overflow-x-auto">
           {subjects.map((s, idx) => (
@@ -285,7 +289,7 @@ export default function ExamRoom() {
               onClick={() => switchSubject(idx)}
               className={`px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
                 idx === activeSubjectIdx
-                  ? 'border-brand-green text-brand-green bg-brand-light'
+                  ? 'border-green-700 text-green-700 bg-green-50'
                   : 'border-transparent text-gray-500 hover:text-gray-700'
               }`}
             >
@@ -296,24 +300,51 @@ export default function ExamRoom() {
       </div>
 
       <div className="flex flex-1 overflow-hidden">
-        {/* ── Question Area ────────────────────────────────────── */}
+
+        {/* ── Question Area ─────────────────────────────────── */}
         <main className="flex-1 overflow-y-auto p-4 md:p-6">
           {currentQuestion ? (
             <div className="max-w-3xl mx-auto">
+
+              {/* Section header — only shown when section changes */}
+              {getSectionHeader(currentQIdx) && (
+                <div className="mb-4 p-4 bg-blue-50 border-l-4 border-blue-500 rounded-xl">
+                  <p className="text-blue-800 font-bold text-base">
+                    {getSectionHeader(currentQIdx)}
+                  </p>
+                  {getSectionInstruction(currentQIdx) && (
+                    <p className="text-blue-600 text-sm mt-1">
+                      {getSectionInstruction(currentQIdx)}
+                    </p>
+                  )}
+                </div>
+              )}
+
               {/* Question header */}
               <div className="flex items-center justify-between mb-4">
                 <span className="text-sm text-gray-500 font-medium">
                   Question {currentQIdx + 1} of {questions.length}
                 </span>
-                <span className="text-xs bg-brand-light text-brand-green px-3 py-1 rounded-full font-medium">
-                  {currentQuestion.markAllocation} mark{currentQuestion.markAllocation !== 1 ? 's' : ''}
-                </span>
+                <div className="flex items-center gap-2">
+                  {currentQuestion.section && (
+                    <span className="text-xs bg-blue-100 text-blue-700 px-3 py-1 rounded-full font-medium">
+                      {currentQuestion.section}
+                    </span>
+                  )}
+                  <span className="text-xs bg-green-50 text-green-700 px-3 py-1 rounded-full font-medium">
+                    {currentQuestion.markAllocation} mark{currentQuestion.markAllocation !== 1 ? 's' : ''}
+                  </span>
+                </div>
               </div>
 
               {/* Question card */}
               <div className="bg-white rounded-2xl shadow-sm p-6 mb-4">
+                {/* Rich text question */}
                 {currentQuestion.questionText && (
-                  <p className="text-gray-800 text-base mb-4 leading-relaxed">{currentQuestion.questionText}</p>
+                  <div
+                    className="text-gray-800 text-base mb-4 leading-relaxed prose max-w-none"
+                    dangerouslySetInnerHTML={{ __html: currentQuestion.questionText }}
+                  />
                 )}
                 {currentQuestion.questionImage && (
                   <img
@@ -337,16 +368,25 @@ export default function ExamRoom() {
                         onClick={() => selectOption(currentQuestion._id, opt)}
                         className={`w-full text-left p-4 rounded-xl border-2 transition-all flex items-start gap-3 ${
                           isSelected
-                            ? 'border-brand-green bg-brand-light'
+                            ? 'border-green-600 bg-green-50'
                             : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
                         }`}
                       >
                         <span className={`w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 ${
-                          isSelected ? 'bg-brand-green text-white' : 'bg-gray-100 text-gray-600'
-                        }`}>{opt}</span>
-                        <div>
-                          {optText && <span className="text-gray-800">{optText}</span>}
-                          {optImg && <img src={optImg} alt={`Option ${opt}`} className="max-w-xs mt-2 rounded" draggable="false" />}
+                          isSelected ? 'bg-green-700 text-white' : 'bg-gray-100 text-gray-600'
+                        }`}>
+                          {opt}
+                        </span>
+                        <div className="flex-1">
+                          {optText && (
+                            <div
+                              className="text-gray-800 prose max-w-none"
+                              dangerouslySetInnerHTML={{ __html: optText }}
+                            />
+                          )}
+                          {optImg && (
+                            <img src={optImg} alt={`Option ${opt}`} className="max-w-xs mt-2 rounded" draggable="false" />
+                          )}
                         </div>
                       </button>
                     );
@@ -403,23 +443,56 @@ export default function ExamRoom() {
           )}
         </main>
 
-        {/* ── Question Palette ─────────────────────────────────── */}
-        <aside className="hidden md:block w-56 bg-white border-l p-4 overflow-y-auto">
+        {/* ── Question Palette ──────────────────────────────── */}
+        <aside className="hidden md:block w-60 bg-white border-l p-4 overflow-y-auto">
           <h3 className="text-xs font-semibold text-gray-500 uppercase mb-3">Question Palette</h3>
-          <div className="grid grid-cols-5 gap-1">
-            {questions.map((q, idx) => (
-              <button
-                key={q._id}
-                onClick={() => goToQuestion(idx)}
-                className={`palette-btn ${getPaletteStatus(q)} ${idx === currentQIdx ? 'current' : ''}`}
-              >
-                {idx + 1}
-              </button>
-            ))}
-          </div>
+
+          {/* Group palette by section */}
+          {(() => {
+            const groups = [];
+            let currentSection = null;
+            let currentGroup = [];
+
+            questions.forEach((q, idx) => {
+              const section = q.section || '';
+              if (section !== currentSection) {
+                if (currentGroup.length > 0) {
+                  groups.push({ section: currentSection, items: currentGroup });
+                }
+                currentSection = section;
+                currentGroup = [{ q, idx }];
+              } else {
+                currentGroup.push({ q, idx });
+              }
+            });
+            if (currentGroup.length > 0) {
+              groups.push({ section: currentSection, items: currentGroup });
+            }
+
+            return groups.map((group, gIdx) => (
+              <div key={gIdx} className="mb-4">
+                {group.section && (
+                  <p className="text-xs font-semibold text-blue-600 mb-2 truncate">
+                    {group.section}
+                  </p>
+                )}
+                <div className="grid grid-cols-5 gap-1">
+                  {group.items.map(({ q, idx }) => (
+                    <button
+                      key={q._id}
+                      onClick={() => goToQuestion(idx)}
+                      className={`palette-btn ${getPaletteStatus(q)} ${idx === currentQIdx ? 'current' : ''}`}
+                    >
+                      {idx + 1}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ));
+          })()}
 
           {/* Legend */}
-          <div className="mt-4 space-y-2 text-xs text-gray-500">
+          <div className="mt-4 space-y-2 text-xs text-gray-500 border-t pt-3">
             <div className="flex items-center gap-2"><div className="w-4 h-4 rounded bg-green-500"></div> Answered</div>
             <div className="flex items-center gap-2"><div className="w-4 h-4 rounded bg-yellow-400"></div> Visited</div>
             <div className="flex items-center gap-2"><div className="w-4 h-4 rounded bg-gray-200"></div> Not Visited</div>
@@ -428,13 +501,13 @@ export default function ExamRoom() {
         </aside>
       </div>
 
-      {/* ── Submit Confirmation Modal ─────────────────────────── */}
+      {/* ── Submit Confirmation Modal ─────────────────────── */}
       {showSubmitConfirm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl">
             <h3 className="text-lg font-bold text-gray-800 mb-2">Submit Examination?</h3>
             <p className="text-gray-600 text-sm mb-4">
-              You have answered <strong>{answeredCount}</strong> of <strong>{questions.length}</strong> questions in this section.
+              You have answered <strong>{answeredCount}</strong> of <strong>{questions.length}</strong> questions.
               Once submitted, you cannot re-enter the examination.
             </p>
             <div className="flex gap-3">

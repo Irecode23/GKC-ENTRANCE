@@ -2,8 +2,10 @@ const mongoose = require('mongoose');
 
 const questionSchema = new mongoose.Schema({
   subject: { type: mongoose.Schema.Types.ObjectId, ref: 'Subject', required: true },
+  section: { type: String, default: '' }, // e.g. "Section A — Comprehension"
+  sectionInstruction: { type: String, default: '' }, // instruction text for the section
   questionText: { type: String, default: '' },
-  questionImage: { type: String, default: null }, // Cloudinary URL
+  questionImage: { type: String, default: null },
   questionImagePublicId: { type: String, default: null },
   optionA: { type: String, required: true },
   optionB: { type: String, required: true },
@@ -15,7 +17,7 @@ const questionSchema = new mongoose.Schema({
   optionDImage: { type: String, default: null },
   correctAnswer: { type: String, enum: ['A', 'B', 'C', 'D'], required: true },
   markAllocation: { type: Number, required: true, default: 1 },
-  order: { type: Number, default: 0 }, // display order within subject
+  order: { type: Number, default: 0 },
   isActive: { type: Boolean, default: true },
 }, { timestamps: true });
 
