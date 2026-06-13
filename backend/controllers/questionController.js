@@ -5,7 +5,8 @@ const { cloudinary } = require('../config/cloudinary');
 const createQuestion = async (req, res) => {
   try {
     const {
-      subject, questionText, optionA, optionB, optionC, optionD,
+      subject, section, sectionInstruction, questionText,
+      optionA, optionB, optionC, optionD,
       correctAnswer, markAllocation, order,
     } = req.body;
 
@@ -13,7 +14,8 @@ const createQuestion = async (req, res) => {
       return res.status(400).json({ message: 'Subject, options, correct answer and mark allocation are required' });
     }
 
-    if (!questionText && !req.files?.questionImage) {
+    const plainText = questionText ? questionText.replace(/<[^>]+>/g, '').trim() : '';
+    if (!plainText && !req.files?.questionImage) {
       return res.status(400).json({ message: 'Question must have either text or an image' });
     }
 
@@ -30,6 +32,8 @@ const createQuestion = async (req, res) => {
 
     const questionData = {
       subject,
+      section: section || '',
+      sectionInstruction: sectionInstruction || '',
       questionText: questionText || '',
       optionA, optionB, optionC, optionD,
       correctAnswer,
@@ -57,7 +61,7 @@ const createQuestion = async (req, res) => {
 const getQuestionsBySubject = async (req, res) => {
   try {
     const questions = await Question.find({ subject: req.params.subjectId, isActive: true })
-      .sort({ order: 1, createdAt: 1 })
+      .sort({ section: 1, order: 1, createdAt: 1 })
       .populate('subject', 'name code');
     res.json(questions);
   } catch (error) {
@@ -85,7 +89,6 @@ const updateQuestion = async (req, res) => {
 
     // Handle new image uploads
     if (req.files?.questionImage) {
-      // Delete old image from Cloudinary
       if (question.questionImagePublicId) {
         await cloudinary.uploader.destroy(question.questionImagePublicId);
       }
