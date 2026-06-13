@@ -6,7 +6,6 @@ import { io } from 'socket.io-client';
 
 const SOCKET_URL = import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5000';
 
-// Strip HTML to check if empty
 const isEmpty = (html) => !html || html.replace(/<[^>]+>/g, '').trim() === '';
 
 export default function ExamRoom() {
@@ -75,11 +74,18 @@ export default function ExamRoom() {
       try {
         const { data } = await api.post('/exam/start');
         setSubjects(data.subjects);
-        if (data.recovered && data.session.timeRemaining) {
-          setTimeLeft(data.session.timeRemaining);
+
+        // ── Timer recovery fix ──────────────────────────────
+        if (data.recovered && data.session.startTime) {
+          const elapsed = Math.floor(
+            (Date.now() - new Date(data.session.startTime).getTime()) / 1000
+          );
+          const remaining = Math.max(0, (data.session.examDuration || 7200) - elapsed);
+          setTimeLeft(remaining);
         } else {
           setTimeLeft(data.session.examDuration || 7200);
         }
+
         if (data.subjects.length > 0) {
           await loadSubjectQuestions(data.subjects[0]._id);
         }
@@ -240,7 +246,6 @@ export default function ExamRoom() {
     return 'visited';
   };
 
-  // Group palette by section
   const getPaletteGroups = () => {
     const groups = [];
     let currentSection = null;
@@ -305,15 +310,12 @@ export default function ExamRoom() {
           {currentQuestion ? (
             <div className="max-w-3xl mx-auto">
 
-              {/* Section name + instruction — always shown for every question in the section */}
+              {/* Section name + instruction — always shown */}
               {currentQuestion.section && (
                 <div className="mb-4 rounded-2xl overflow-hidden border border-blue-200 shadow-sm">
-                  {/* Section title bar */}
                   <div className="bg-blue-600 px-5 py-3">
                     <p className="text-white font-bold text-base">{currentQuestion.section}</p>
                   </div>
-
-                  {/* Section instruction — always visible */}
                   {!isEmpty(currentQuestion.sectionInstruction) && (
                     <div className="bg-blue-50 px-5 py-4">
                       <div
@@ -465,7 +467,6 @@ export default function ExamRoom() {
             </div>
           ))}
 
-          {/* Legend */}
           <div className="mt-4 space-y-2 text-xs text-gray-500 border-t pt-3">
             <div className="flex items-center gap-2"><div className="w-4 h-4 rounded bg-green-500"></div> Answered</div>
             <div className="flex items-center gap-2"><div className="w-4 h-4 rounded bg-yellow-400"></div> Visited</div>

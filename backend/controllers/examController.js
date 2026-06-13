@@ -18,10 +18,8 @@ const shuffle = (arr) => {
 
 // Helper: shuffle within sections only
 const shuffleWithinSections = (questions) => {
-  // Group questions by section
   const sections = {};
   const sectionOrder = [];
-
   questions.forEach((q) => {
     const sectionKey = q.section || '__no_section__';
     if (!sections[sectionKey]) {
@@ -30,14 +28,11 @@ const shuffleWithinSections = (questions) => {
     }
     sections[sectionKey].push(q);
   });
-
-  // Shuffle within each section, then join back
   const result = [];
   sectionOrder.forEach((sectionKey) => {
     const shuffled = shuffle(sections[sectionKey]);
     result.push(...shuffled);
   });
-
   return result;
 };
 
@@ -51,7 +46,6 @@ const gradeExam = async (studentId, studentObjectId) => {
   for (const subject of subjects) {
     const questions = await Question.find({ subject: subject._id, isActive: true });
     const answers = await Answer.find({ student: studentObjectId, subject: subject._id });
-
     const answerMap = {};
     answers.forEach((a) => { answerMap[a.question.toString()] = a.selectedOption; });
 
@@ -113,15 +107,19 @@ const startExam = async (req, res) => {
       return res.status(403).json({ message: 'Examination already submitted.' });
     }
 
-    // If already active (session recovery), return current state
+    // Session recovery
     if (session.status === 'active' && session.startTime) {
-      const elapsed = Math.floor((Date.now() - session.startTime) / 1000);
+      const elapsed = Math.floor((Date.now() - new Date(session.startTime).getTime()) / 1000);
       const remaining = Math.max(0, session.examDuration - elapsed);
       session.timeRemaining = remaining;
       await session.save();
 
       const subjects = await Subject.find({ isActive: true }).sort({ order: 1 });
-      return res.json({ session, subjects, recovered: true });
+      return res.json({
+        session: { ...session.toObject(), timeRemaining: remaining },
+        subjects,
+        recovered: true,
+      });
     }
 
     // Fresh start
@@ -129,17 +127,14 @@ const startExam = async (req, res) => {
     const questionOrder = [];
 
     for (const subject of subjects) {
-      // Get questions sorted by section and order
       const questions = await Question.find({ subject: subject._id, isActive: true })
         .sort({ section: 1, order: 1 });
 
-      // Shuffle within sections only
       const shuffled = shuffleWithinSections(questions);
       const shuffledIds = shuffled.map((q) => q._id);
 
       questionOrder.push({ subject: subject._id, questions: shuffledIds });
 
-      // Pre-create answer records (not_visited)
       for (const qId of shuffledIds) {
         await Answer.findOneAndUpdate(
           { student: student._id, question: qId },
@@ -169,7 +164,7 @@ const startExam = async (req, res) => {
   }
 };
 
-// Get questions for a subject (student view — no correct answers)
+// Get questions for a subject
 const getExamQuestions = async (req, res) => {
   try {
     const student = req.student;
@@ -180,7 +175,6 @@ const getExamQuestions = async (req, res) => {
       return res.status(403).json({ message: 'No active exam session' });
     }
 
-    // Get ordered questions from session
     const subjectOrder = session.questionOrder.find(
       (so) => so.subject.toString() === subjectId
     );
@@ -188,20 +182,32 @@ const getExamQuestions = async (req, res) => {
     let questions;
     if (subjectOrder && subjectOrder.questions.length > 0) {
       const orderedIds = subjectOrder.questions;
-      const questionDocs = await Question.find({ _id: { $in: orderedIds } })
+
+      // Get ALL active questions for this subject
+      const allQuestions = await Question.find({ subject: subjectId, isActive: true })
         .select('-correctAnswer -questionImagePublicId');
 
-      // Re-order by session order
       const map = {};
-      questionDocs.forEach((q) => { map[q._id.toString()] = q; });
-      questions = orderedIds.map((id) => map[id.toString()]).filter(Boolean);
+      allQuestions.forEach((q) => { map[q._id.toString()] = q; });
+
+      // Questions in session order
+      const orderedQuestions = orderedIds
+        .map((id) => map[id.toString()])
+        .filter(Boolean);
+
+      // Questions NOT in session order (added after session started)
+      const orderedIdSet = new Set(orderedIds.map((id) => id.toString()));
+      const newQuestions = allQuestions.filter((q) => !orderedIdSet.has(q._id.toString()));
+
+      // Combine: session ordered first, then new questions sorted by section
+      questions = [...orderedQuestions, ...newQuestions];
     } else {
       questions = await Question.find({ subject: subjectId, isActive: true })
         .select('-correctAnswer -questionImagePublicId')
         .sort({ section: 1, order: 1 });
     }
 
-    // Get saved answers for this student + subject
+    // Get saved answers
     const answers = await Answer.find({ student: student._id, subject: subjectId });
     const answerMap = {};
     answers.forEach((a) => {
@@ -265,7 +271,6 @@ const saveAnswer = async (req, res) => {
 const submitExam = async (req, res) => {
   try {
     const student = req.student;
-
     const session = await ExamSession.findOne({ student: student._id });
     if (!session) return res.status(404).json({ message: 'Session not found' });
     if (session.status === 'submitted') {
@@ -279,20 +284,14 @@ const submitExam = async (req, res) => {
     await session.save();
 
     await Student.findByIdAndUpdate(student._id, { examSubmitted: true });
-
-    // Grade automatically
     await gradeExam(student.studentId, student._id);
 
     await ActivityLog.create({
       student: student._id,
-      action: session.autoSubmitted
-        ? 'Exam Auto-Submitted (Time Elapsed)'
-        : 'Submitted Examination',
+      action: session.autoSubmitted ? 'Exam Auto-Submitted (Time Elapsed)' : 'Submitted Examination',
     });
 
-    res.json({
-      message: 'Your examination has been submitted successfully. Thank you for participating in the entrance examination.',
-    });
+    res.json({ message: 'Your examination has been submitted successfully. Thank you for participating in the entrance examination.' });
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
   }
@@ -303,16 +302,13 @@ const logSecurityEvent = async (req, res) => {
   try {
     const student = req.student;
     const { event, details } = req.body;
-
     const session = await ExamSession.findOne({ student: student._id });
     if (session) {
       if (event === 'tab_switch') session.tabSwitches += 1;
       if (event === 'fullscreen_exit') session.fullscreenExits += 1;
       await session.save();
     }
-
     await ActivityLog.create({ student: student._id, action: event, details: details || '' });
-
     res.json({ message: 'Event logged' });
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
