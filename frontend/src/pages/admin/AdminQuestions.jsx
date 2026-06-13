@@ -4,10 +4,7 @@ import api from '../../utils/api';
 import ReactQuill from 'react-quill';
 import 'react-quill/dist/quill.snow.css';
 
-const emptyForm = {
-  subject: '',
-  section: '',
-  sectionInstruction: '',
+const emptyQuestion = {
   questionText: '',
   optionA: '', optionB: '', optionC: '', optionD: '',
   correctAnswer: 'A',
@@ -27,20 +24,32 @@ const quillModules = {
 
 const quillFormats = ['bold', 'italic', 'underline', 'list', 'bullet'];
 
+// Strip HTML to check if content is empty
+const isEmpty = (html) => !html || html.replace(/<[^>]+>/g, '').trim() === '';
+
 export default function AdminQuestions() {
   const [subjects, setSubjects] = useState([]);
   const [selectedSubject, setSelectedSubject] = useState('');
   const [questions, setQuestions] = useState([]);
   const [loadingQ, setLoadingQ] = useState(false);
-  const [showForm, setShowForm] = useState(false);
+
+  // Section form
+  const [showSectionForm, setShowSectionForm] = useState(false);
+  const [activeSection, setActiveSection] = useState(null); // { name, instruction }
+  const [sectionForm, setSectionForm] = useState({ name: '', instruction: '' });
+
+  // Question form
+  const [showQuestionForm, setShowQuestionForm] = useState(false);
   const [editingQ, setEditingQ] = useState(null);
-  const [form, setForm] = useState(emptyForm);
+  const [questionForm, setQuestionForm] = useState(emptyQuestion);
   const [images, setImages] = useState({});
   const [previews, setPreviews] = useState({});
+
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const formRef = useRef(null);
+  const sectionFormRef = useRef(null);
 
   useEffect(() => {
     api.get('/subjects').then(({ data }) => {
@@ -52,39 +61,37 @@ export default function AdminQuestions() {
   useEffect(() => {
     if (!selectedSubject) return;
     setLoadingQ(true);
+    setActiveSection(null);
+    setShowQuestionForm(false);
+    setShowSectionForm(false);
     api.get(`/questions/subject/${selectedSubject}`)
       .then(({ data }) => setQuestions(data))
       .catch(() => {})
       .finally(() => setLoadingQ(false));
   }, [selectedSubject]);
 
-  const openCreate = () => {
-    setEditingQ(null);
-    setForm({ ...emptyForm, subject: selectedSubject });
-    setImages({});
-    setPreviews({});
-    setError('');
-    setShowForm(true);
-    setTimeout(() => formRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
-  };
+  // Group questions by section
+  const groupedQuestions = () => {
+    const groups = [];
+    let currentSection = null;
+    let currentGroup = [];
 
-  const openEdit = (q) => {
-    setEditingQ(q);
-    setForm({
-      subject: q.subject._id || q.subject,
-      section: q.section || '',
-      sectionInstruction: q.sectionInstruction || '',
-      questionText: q.questionText || '',
-      optionA: q.optionA, optionB: q.optionB, optionC: q.optionC, optionD: q.optionD,
-      correctAnswer: q.correctAnswer,
-      markAllocation: q.markAllocation,
-      order: q.order || '',
+    questions.forEach((q) => {
+      const section = q.section || '__none__';
+      if (section !== currentSection) {
+        if (currentGroup.length > 0) {
+          groups.push({ section: currentSection, instruction: currentGroup[0]?.sectionInstruction || '', questions: currentGroup });
+        }
+        currentSection = section;
+        currentGroup = [q];
+      } else {
+        currentGroup.push(q);
+      }
     });
-    setImages({});
-    setPreviews({});
-    setError('');
-    setShowForm(true);
-    setTimeout(() => formRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+    if (currentGroup.length > 0) {
+      groups.push({ section: currentSection, instruction: currentGroup[0]?.sectionInstruction || '', questions: currentGroup });
+    }
+    return groups;
   };
 
   const handleImageChange = (field, file) => {
@@ -95,32 +102,90 @@ export default function AdminQuestions() {
     reader.readAsDataURL(file);
   };
 
-  const handleSubmit = async (e) => {
+  // Open section form
+  const openSectionForm = () => {
+    setSectionForm({ name: '', instruction: '' });
+    setShowSectionForm(true);
+    setShowQuestionForm(false);
+    setTimeout(() => sectionFormRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+  };
+
+  // Confirm section — sets active section, ready to add questions
+  const confirmSection = () => {
+    if (!sectionForm.name.trim()) return setError('Section name is required');
+    setActiveSection({ name: sectionForm.name.trim(), instruction: sectionForm.instruction });
+    setShowSectionForm(false);
+    setShowQuestionForm(true);
+    setQuestionForm(emptyQuestion);
+    setImages({});
+    setPreviews({});
+    setError('');
+    setTimeout(() => formRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+  };
+
+  // Open question form for editing
+  const openEdit = (q) => {
+    setEditingQ(q);
+    setActiveSection({ name: q.section || '', instruction: q.sectionInstruction || '' });
+    setQuestionForm({
+      questionText: q.questionText || '',
+      optionA: q.optionA, optionB: q.optionB, optionC: q.optionC, optionD: q.optionD,
+      correctAnswer: q.correctAnswer,
+      markAllocation: q.markAllocation,
+      order: q.order || '',
+    });
+    setImages({});
+    setPreviews({});
+    setError('');
+    setShowQuestionForm(true);
+    setShowSectionForm(false);
+    setTimeout(() => formRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+  };
+
+  // Save question
+  const handleSubmitQuestion = async (e) => {
     e.preventDefault();
-    const plainText = form.questionText.replace(/<[^>]+>/g, '').trim();
-    if (!plainText && !images.questionImage && !(editingQ?.questionImage)) {
+    if (isEmpty(questionForm.questionText) && !images.questionImage && !(editingQ?.questionImage)) {
       return setError('Question must have either text or an image.');
     }
+    if (isEmpty(questionForm.optionA) || isEmpty(questionForm.optionB) ||
+        isEmpty(questionForm.optionC) || isEmpty(questionForm.optionD)) {
+      return setError('All four options are required.');
+    }
+
     setSaving(true);
     setError('');
 
     const fd = new FormData();
-    Object.entries(form).forEach(([k, v]) => fd.append(k, v));
+    fd.append('subject', selectedSubject);
+    fd.append('section', activeSection?.name || '');
+    fd.append('sectionInstruction', activeSection?.instruction || '');
+    fd.append('questionText', questionForm.questionText);
+    fd.append('optionA', questionForm.optionA);
+    fd.append('optionB', questionForm.optionB);
+    fd.append('optionC', questionForm.optionC);
+    fd.append('optionD', questionForm.optionD);
+    fd.append('correctAnswer', questionForm.correctAnswer);
+    fd.append('markAllocation', questionForm.markAllocation);
+    if (questionForm.order) fd.append('order', questionForm.order);
     Object.entries(images).forEach(([k, v]) => fd.append(k, v));
 
     try {
       if (editingQ) {
-        await api.put(`/questions/${editingQ._id}`, fd, {
-          headers: { 'Content-Type': 'multipart/form-data' },
-        });
+        await api.put(`/questions/${editingQ._id}`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
         setSuccess('Question updated.');
+        setEditingQ(null);
       } else {
-        await api.post('/questions', fd, {
-          headers: { 'Content-Type': 'multipart/form-data' },
-        });
-        setSuccess('Question added.');
+        await api.post('/questions', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+        setSuccess('Question added. You can add another question to this section or add a new section.');
       }
-      setShowForm(false);
+
+      // Reset question form but keep active section
+      setQuestionForm(emptyQuestion);
+      setImages({});
+      setPreviews({});
+
+      // Reload questions
       const { data } = await api.get(`/questions/subject/${selectedSubject}`);
       setQuestions(data);
     } catch (err) {
@@ -142,6 +207,7 @@ export default function AdminQuestions() {
   };
 
   const activeSubject = subjects.find((s) => s._id === selectedSubject);
+  const groups = groupedQuestions();
 
   return (
     <AdminLayout title="Questions">
@@ -158,10 +224,10 @@ export default function AdminQuestions() {
           {subjects.map((s) => (
             <button
               key={s._id}
-              onClick={() => { setSelectedSubject(s._id); setShowForm(false); }}
+              onClick={() => { setSelectedSubject(s._id); setShowSectionForm(false); setShowQuestionForm(false); }}
               className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
                 selectedSubject === s._id
-                  ? 'bg-brand-green text-white'
+                  ? 'bg-green-700 text-white'
                   : 'bg-white border border-gray-300 text-gray-600 hover:bg-gray-50'
               }`}
             >
@@ -169,14 +235,30 @@ export default function AdminQuestions() {
             </button>
           ))}
         </div>
-        {selectedSubject && (
+        <div className="ml-auto flex gap-2">
           <button
-            onClick={openCreate}
-            className="ml-auto px-5 py-2 bg-brand-green text-white rounded-xl text-sm font-semibold hover:bg-brand-dark transition-colors"
+            onClick={openSectionForm}
+            className="px-5 py-2 bg-blue-600 text-white rounded-xl text-sm font-semibold hover:bg-blue-700 transition-colors"
+          >
+            + Add Section
+          </button>
+          <button
+            onClick={() => {
+              if (!activeSection) return setError('Please add a section first before adding questions.');
+              setEditingQ(null);
+              setQuestionForm(emptyQuestion);
+              setImages({});
+              setPreviews({});
+              setError('');
+              setShowQuestionForm(true);
+              setShowSectionForm(false);
+              setTimeout(() => formRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+            }}
+            className="px-5 py-2 bg-green-700 text-white rounded-xl text-sm font-semibold hover:bg-green-800 transition-colors"
           >
             + Add Question
           </button>
-        )}
+        </div>
       </div>
 
       {/* Subject stats */}
@@ -196,51 +278,95 @@ export default function AdminQuestions() {
             <span className="text-gray-500">Obtainable marks:</span>
             <span className="font-semibold text-gray-800 ml-2">{activeSubject.obtainableMarks}</span>
           </div>
+          {activeSection && (
+            <div>
+              <span className="text-gray-500">Active section:</span>
+              <span className="font-semibold text-blue-700 ml-2">{activeSection.name}</span>
+            </div>
+          )}
         </div>
       )}
 
-      {/* Add / Edit Form */}
-      {showForm && (
+      {error && (
+        <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-xl text-sm flex justify-between">
+          {error}
+          <button onClick={() => setError('')}>✕</button>
+        </div>
+      )}
+
+      {/* Section form */}
+      {showSectionForm && (
+        <div ref={sectionFormRef} className="bg-blue-50 border border-blue-200 rounded-2xl p-6 mb-6">
+          <h3 className="font-bold text-blue-800 mb-4 text-base">New Section</h3>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">
+                Section Name *
+                <span className="text-gray-400 font-normal ml-1">(e.g. Section A — Comprehension)</span>
+              </label>
+              <input
+                value={sectionForm.name}
+                onChange={(e) => setSectionForm({ ...sectionForm, name: e.target.value })}
+                placeholder="e.g. Section A"
+                className="w-full px-3 py-2 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">
+                Section Instruction
+                <span className="text-gray-400 font-normal ml-1">(optional — supports bold, italic, underline. You can paste a passage here.)</span>
+              </label>
+              <ReactQuill
+                theme="snow"
+                value={sectionForm.instruction}
+                onChange={(value) => setSectionForm({ ...sectionForm, instruction: value })}
+                modules={quillModules}
+                formats={quillFormats}
+                placeholder="e.g. Read the following passage carefully and answer the questions on it..."
+                className="bg-white rounded-xl"
+              />
+            </div>
+            <div className="flex gap-3 pt-2">
+              <button
+                onClick={confirmSection}
+                className="px-6 py-2 bg-blue-600 text-white rounded-xl text-sm font-semibold hover:bg-blue-700"
+              >
+                Confirm Section → Add Questions
+              </button>
+              <button
+                onClick={() => setShowSectionForm(false)}
+                className="px-6 py-2 border border-gray-300 rounded-xl text-sm hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Question form */}
+      {showQuestionForm && (
         <div ref={formRef} className="bg-white rounded-2xl shadow-sm p-6 mb-6">
+          {/* Active section indicator */}
+          {activeSection && (
+            <div className="mb-5 p-3 bg-blue-50 border border-blue-200 rounded-xl">
+              <p className="text-xs text-blue-500 font-medium">Adding question under:</p>
+              <p className="text-blue-800 font-bold">{activeSection.name}</p>
+              {!isEmpty(activeSection.instruction) && (
+                <div
+                  className="text-blue-600 text-xs mt-1 prose max-w-none"
+                  dangerouslySetInnerHTML={{ __html: activeSection.instruction }}
+                />
+              )}
+            </div>
+          )}
+
           <h3 className="font-bold text-gray-800 mb-5">
             {editingQ ? 'Edit Question' : 'New Question'}
           </h3>
-          {error && <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg mb-4">{error}</p>}
 
-          <form onSubmit={handleSubmit} className="space-y-5">
-
-            {/* Section */}
-            <div className="p-4 bg-blue-50 rounded-xl border border-blue-100 space-y-4">
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">
-                  Section
-                  <span className="text-gray-400 font-normal ml-1">(optional — e.g. Section A)</span>
-                </label>
-                <input
-                  value={form.section}
-                  onChange={(e) => setForm({ ...form, section: e.target.value })}
-                  placeholder="e.g. Section A — Comprehension"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-green"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">
-                  Section Instruction
-                  <span className="text-gray-400 font-normal ml-1">(optional — supports bold, italic, underline)</span>
-                </label>
-                <ReactQuill
-                  theme="snow"
-                  value={form.sectionInstruction}
-                  onChange={(value) => setForm({ ...form, sectionInstruction: value })}
-                  modules={quillModules}
-                  formats={quillFormats}
-                  placeholder="e.g. Read the passage carefully and answer the questions below..."
-                  className="bg-white rounded-xl"
-                />
-              </div>
-            </div>
-
-            {/* Question text with rich editor */}
+          <form onSubmit={handleSubmitQuestion} className="space-y-5">
+            {/* Question text */}
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">
                 Question Text
@@ -248,8 +374,8 @@ export default function AdminQuestions() {
               </label>
               <ReactQuill
                 theme="snow"
-                value={form.questionText}
-                onChange={(value) => setForm({ ...form, questionText: value })}
+                value={questionForm.questionText}
+                onChange={(value) => setQuestionForm({ ...questionForm, questionText: value })}
                 modules={quillModules}
                 formats={quillFormats}
                 placeholder="Type the question here..."
@@ -284,14 +410,14 @@ export default function AdminQuestions() {
               <div className="space-y-3">
                 {OPTIONS.map((opt) => (
                   <div key={opt} className={`flex gap-3 items-start p-3 rounded-xl border-2 transition-colors ${
-                    form.correctAnswer === opt ? 'border-green-400 bg-green-50' : 'border-gray-200'
+                    questionForm.correctAnswer === opt ? 'border-green-400 bg-green-50' : 'border-gray-200'
                   }`}>
                     <button
                       type="button"
-                      onClick={() => setForm({ ...form, correctAnswer: opt })}
+                      onClick={() => setQuestionForm({ ...questionForm, correctAnswer: opt })}
                       className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 transition-colors ${
-                        form.correctAnswer === opt
-                          ? 'bg-brand-green text-white'
+                        questionForm.correctAnswer === opt
+                          ? 'bg-green-700 text-white'
                           : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
                       }`}
                     >
@@ -300,8 +426,8 @@ export default function AdminQuestions() {
                     <div className="flex-1 space-y-2">
                       <ReactQuill
                         theme="snow"
-                        value={form[`option${opt}`]}
-                        onChange={(value) => setForm({ ...form, [`option${opt}`]: value })}
+                        value={questionForm[`option${opt}`]}
+                        onChange={(value) => setQuestionForm({ ...questionForm, [`option${opt}`]: value })}
                         modules={quillModules}
                         formats={quillFormats}
                         placeholder={`Option ${opt} text`}
@@ -323,7 +449,7 @@ export default function AdminQuestions() {
                         )}
                       </div>
                     </div>
-                    {form.correctAnswer === opt && (
+                    {questionForm.correctAnswer === opt && (
                       <span className="text-green-600 text-xs font-bold self-center whitespace-nowrap">✓ Correct</span>
                     )}
                   </div>
@@ -340,9 +466,9 @@ export default function AdminQuestions() {
                   type="number"
                   min="0.5"
                   step="0.5"
-                  value={form.markAllocation}
-                  onChange={(e) => setForm({ ...form, markAllocation: Number(e.target.value) })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-green"
+                  value={questionForm.markAllocation}
+                  onChange={(e) => setQuestionForm({ ...questionForm, markAllocation: Number(e.target.value) })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-green-600"
                 />
               </div>
               <div>
@@ -353,9 +479,9 @@ export default function AdminQuestions() {
                 <input
                   type="number"
                   min="1"
-                  value={form.order}
-                  onChange={(e) => setForm({ ...form, order: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-green"
+                  value={questionForm.order}
+                  onChange={(e) => setQuestionForm({ ...questionForm, order: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-green-600"
                 />
               </div>
             </div>
@@ -364,96 +490,135 @@ export default function AdminQuestions() {
               <button
                 type="submit"
                 disabled={saving}
-                className="px-6 py-2 bg-brand-green text-white rounded-xl text-sm font-semibold hover:bg-brand-dark disabled:opacity-60"
+                className="px-6 py-2 bg-green-700 text-white rounded-xl text-sm font-semibold hover:bg-green-800 disabled:opacity-60"
               >
-                {saving ? 'Saving...' : editingQ ? 'Update Question' : 'Add Question'}
+                {saving ? 'Saving...' : editingQ ? 'Update Question' : 'Save Question'}
               </button>
+              {!editingQ && (
+                <button
+                  type="button"
+                  onClick={openSectionForm}
+                  className="px-6 py-2 bg-blue-600 text-white rounded-xl text-sm font-semibold hover:bg-blue-700"
+                >
+                  + New Section
+                </button>
+              )}
               <button
                 type="button"
-                onClick={() => setShowForm(false)}
+                onClick={() => { setShowQuestionForm(false); setEditingQ(null); }}
                 className="px-6 py-2 border border-gray-300 rounded-xl text-sm hover:bg-gray-50"
               >
-                Cancel
+                Close
               </button>
             </div>
           </form>
         </div>
       )}
 
-      {/* Questions list */}
-      <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
-        <div className="p-4 border-b">
-          <h3 className="font-semibold text-gray-700">
-            {activeSubject?.name} — {questions.length} Question{questions.length !== 1 ? 's' : ''}
-          </h3>
-        </div>
+      {/* Questions list grouped by section */}
+      <div className="space-y-6">
         {loadingQ ? (
-          <p className="p-6 text-gray-400">Loading questions...</p>
+          <p className="text-gray-400">Loading questions...</p>
+        ) : groups.length === 0 ? (
+          <div className="bg-white rounded-2xl shadow-sm p-12 text-center text-gray-400">
+            <p className="text-4xl mb-3">❓</p>
+            <p className="font-medium">No questions yet for this subject.</p>
+            <p className="text-xs mt-1">Click "+ Add Section" to begin.</p>
+          </div>
         ) : (
-          <div className="divide-y divide-gray-100">
-            {questions.map((q, idx) => (
-              <div key={q._id} className="p-4 hover:bg-gray-50 flex gap-4">
-                <span className="w-8 h-8 rounded-full bg-brand-light text-brand-green text-sm font-bold flex items-center justify-center flex-shrink-0">
-                  {idx + 1}
-                </span>
-                <div className="flex-1 min-w-0">
-                  {q.section && (
-                    <span className="inline-block px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full mb-1 font-medium">
-                      {q.section}
-                    </span>
-                  )}
-                  {q.questionText && (
+          groups.map((group, gIdx) => (
+            <div key={gIdx} className="bg-white rounded-2xl shadow-sm overflow-hidden">
+              {/* Section header */}
+              {group.section !== '__none__' && (
+                <div className="bg-blue-600 px-5 py-3">
+                  <p className="text-white font-bold">{group.section}</p>
+                  {!isEmpty(group.instruction) && (
                     <div
-                      className="text-sm text-gray-800 mb-1 line-clamp-2"
-                      dangerouslySetInnerHTML={{ __html: q.questionText }}
+                      className="text-blue-100 text-sm mt-1 prose prose-invert max-w-none"
+                      dangerouslySetInnerHTML={{ __html: group.instruction }}
                     />
                   )}
-                  {q.questionImage && (
-                    <img src={q.questionImage} alt="Q" className="h-12 rounded border mb-1" />
-                  )}
-                  <div className="flex flex-wrap gap-2 text-xs text-gray-500">
-                    {['A', 'B', 'C', 'D'].map((opt) => (
-                      <span
-                        key={opt}
-                        className={`px-2 py-0.5 rounded ${
-                          q.correctAnswer === opt
-                            ? 'bg-green-100 text-green-700 font-bold'
-                            : 'bg-gray-100'
-                        }`}
-                      >
-                        {opt}:&nbsp;
-                        <span dangerouslySetInnerHTML={{ __html: q[`option${opt}`] }} />
+                </div>
+              )}
+
+              {/* Questions in this section */}
+              <div className="divide-y divide-gray-100">
+                {group.questions.map((q, idx) => {
+                  const globalIdx = questions.findIndex((qq) => qq._id === q._id);
+                  return (
+                    <div key={q._id} className="p-4 hover:bg-gray-50 flex gap-4">
+                      <span className="w-8 h-8 rounded-full bg-green-50 text-green-700 text-sm font-bold flex items-center justify-center flex-shrink-0">
+                        {globalIdx + 1}
                       </span>
-                    ))}
-                    <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-600">
-                      {q.markAllocation} mark{q.markAllocation !== 1 ? 's' : ''}
-                    </span>
-                  </div>
-                </div>
-                <div className="flex gap-2 flex-shrink-0">
-                  <button
-                    onClick={() => openEdit(q)}
-                    className="px-3 py-1 text-xs bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100"
-                  >
-                    Edit
-                  </button>
-                  <button
-                    onClick={() => handleDelete(q._id)}
-                    className="px-3 py-1 text-xs bg-red-50 text-red-600 rounded-lg hover:bg-red-100"
-                  >
-                    Delete
-                  </button>
-                </div>
+                      <div className="flex-1 min-w-0">
+                        {q.questionText && (
+                          <div
+                            className="text-sm text-gray-800 mb-1 line-clamp-2 prose max-w-none"
+                            dangerouslySetInnerHTML={{ __html: q.questionText }}
+                          />
+                        )}
+                        {q.questionImage && (
+                          <img src={q.questionImage} alt="Q" className="h-12 rounded border mb-1" />
+                        )}
+                        <div className="flex flex-wrap gap-2 text-xs text-gray-500 mt-1">
+                          {['A', 'B', 'C', 'D'].map((opt) => (
+                            <span
+                              key={opt}
+                              className={`px-2 py-0.5 rounded ${
+                                q.correctAnswer === opt
+                                  ? 'bg-green-100 text-green-700 font-bold'
+                                  : 'bg-gray-100'
+                              }`}
+                            >
+                              {opt}:&nbsp;
+                              <span dangerouslySetInnerHTML={{ __html: q[`option${opt}`]?.replace(/<[^>]+>/g, '') }} />
+                            </span>
+                          ))}
+                          <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-600">
+                            {q.markAllocation} mark{q.markAllocation !== 1 ? 's' : ''}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex gap-2 flex-shrink-0">
+                        <button
+                          onClick={() => openEdit(q)}
+                          className="px-3 py-1 text-xs bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => handleDelete(q._id)}
+                          className="px-3 py-1 text-xs bg-red-50 text-red-600 rounded-lg hover:bg-red-100"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-            ))}
-            {!questions.length && (
-              <div className="p-12 text-center text-gray-400">
-                <p className="text-4xl mb-3">❓</p>
-                <p>No questions yet for this subject.</p>
-                <p className="text-xs mt-1">Click "+ Add Question" to begin.</p>
+
+              {/* Add question to this section button */}
+              <div className="px-4 py-3 bg-gray-50 border-t">
+                <button
+                  onClick={() => {
+                    setActiveSection({ name: group.section === '__none__' ? '' : group.section, instruction: group.instruction });
+                    setEditingQ(null);
+                    setQuestionForm(emptyQuestion);
+                    setImages({});
+                    setPreviews({});
+                    setShowQuestionForm(true);
+                    setShowSectionForm(false);
+                    setError('');
+                    setTimeout(() => formRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+                  }}
+                  className="text-xs text-green-700 font-semibold hover:underline"
+                >
+                  + Add question to {group.section === '__none__' ? 'this section' : group.section}
+                </button>
               </div>
-            )}
-          </div>
+            </div>
+          ))
         )}
       </div>
     </AdminLayout>

@@ -6,6 +6,9 @@ import { io } from 'socket.io-client';
 
 const SOCKET_URL = import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5000';
 
+// Strip HTML to check if empty
+const isEmpty = (html) => !html || html.replace(/<[^>]+>/g, '').trim() === '';
+
 export default function ExamRoom() {
   const { student, studentLogout } = useAuth();
   const navigate = useNavigate();
@@ -214,25 +217,6 @@ export default function ExamRoom() {
     } catch {}
   };
 
-  // ── Check if section changes from previous question ───────────
-  const getSectionHeader = (idx) => {
-    const current = questions[idx];
-    if (!current?.section) return null;
-    if (idx === 0) return current.section;
-    const prev = questions[idx - 1];
-    if (prev?.section !== current.section) return current.section;
-    return null;
-  };
-
-  const getSectionInstruction = (idx) => {
-    const current = questions[idx];
-    if (!current?.sectionInstruction) return null;
-    if (idx === 0) return current.sectionInstruction;
-    const prev = questions[idx - 1];
-    if (prev?.section !== current.section) return current.sectionInstruction;
-    return null;
-  };
-
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -245,7 +229,6 @@ export default function ExamRoom() {
   }
 
   const currentQuestion = questions[currentQIdx];
-  const activeSubject = subjects[activeSubjectIdx];
   const answeredCount = questions.filter((q) => answerMap[q._id]?.selectedOption).length;
   const timerColor = timeLeft < 600 ? 'text-red-500' : timeLeft < 1800 ? 'text-yellow-500' : 'text-green-400';
 
@@ -258,7 +241,23 @@ export default function ExamRoom() {
   };
 
   // Group palette by section
-  const getPaletteSection = (q) => q.section || '';
+  const getPaletteGroups = () => {
+    const groups = [];
+    let currentSection = null;
+    let currentGroup = [];
+    questions.forEach((q, idx) => {
+      const section = q.section || '';
+      if (section !== currentSection) {
+        if (currentGroup.length > 0) groups.push({ section: currentSection, items: currentGroup });
+        currentSection = section;
+        currentGroup = [{ q, idx }];
+      } else {
+        currentGroup.push({ q, idx });
+      }
+    });
+    if (currentGroup.length > 0) groups.push({ section: currentSection, items: currentGroup });
+    return groups;
+  };
 
   return (
     <div className="exam-mode min-h-screen bg-gray-100 flex flex-col select-none">
@@ -306,43 +305,41 @@ export default function ExamRoom() {
           {currentQuestion ? (
             <div className="max-w-3xl mx-auto">
 
-              {/* Section header — only shown when section changes */}
-              {getSectionHeader(currentQIdx) && (
-                <div className="mb-4 p-4 bg-blue-50 border-l-4 border-blue-500 rounded-xl">
-                  <p className="text-blue-800 font-bold text-base">
-                    {getSectionHeader(currentQIdx)}
-                  </p>
-                  {getSectionInstruction(currentQIdx) && (
-                    <p className="text-blue-600 text-sm mt-1">
-                      {getSectionInstruction(currentQIdx)}
-                    </p>
+              {/* Section name + instruction — always shown for every question in the section */}
+              {currentQuestion.section && (
+                <div className="mb-4 rounded-2xl overflow-hidden border border-blue-200 shadow-sm">
+                  {/* Section title bar */}
+                  <div className="bg-blue-600 px-5 py-3">
+                    <p className="text-white font-bold text-base">{currentQuestion.section}</p>
+                  </div>
+
+                  {/* Section instruction — always visible */}
+                  {!isEmpty(currentQuestion.sectionInstruction) && (
+                    <div className="bg-blue-50 px-5 py-4">
+                      <div
+                        className="text-gray-800 text-sm leading-relaxed prose max-w-none"
+                        dangerouslySetInnerHTML={{ __html: currentQuestion.sectionInstruction }}
+                      />
+                    </div>
                   )}
                 </div>
               )}
 
               {/* Question header */}
-              <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center justify-between mb-3">
                 <span className="text-sm text-gray-500 font-medium">
                   Question {currentQIdx + 1} of {questions.length}
                 </span>
-                <div className="flex items-center gap-2">
-                  {currentQuestion.section && (
-                    <span className="text-xs bg-blue-100 text-blue-700 px-3 py-1 rounded-full font-medium">
-                      {currentQuestion.section}
-                    </span>
-                  )}
-                  <span className="text-xs bg-green-50 text-green-700 px-3 py-1 rounded-full font-medium">
-                    {currentQuestion.markAllocation} mark{currentQuestion.markAllocation !== 1 ? 's' : ''}
-                  </span>
-                </div>
+                <span className="text-xs bg-green-50 text-green-700 px-3 py-1 rounded-full font-medium border border-green-200">
+                  {currentQuestion.markAllocation} mark{currentQuestion.markAllocation !== 1 ? 's' : ''}
+                </span>
               </div>
 
               {/* Question card */}
               <div className="bg-white rounded-2xl shadow-sm p-6 mb-4">
-                {/* Rich text question */}
                 {currentQuestion.questionText && (
                   <div
-                    className="text-gray-800 text-base mb-4 leading-relaxed prose max-w-none"
+                    className="text-gray-800 text-base mb-5 leading-relaxed prose max-w-none"
                     dangerouslySetInnerHTML={{ __html: currentQuestion.questionText }}
                   />
                 )}
@@ -378,7 +375,7 @@ export default function ExamRoom() {
                           {opt}
                         </span>
                         <div className="flex-1">
-                          {optText && (
+                          {!isEmpty(optText) && (
                             <div
                               className="text-gray-800 prose max-w-none"
                               dangerouslySetInnerHTML={{ __html: optText }}
@@ -447,49 +444,26 @@ export default function ExamRoom() {
         <aside className="hidden md:block w-60 bg-white border-l p-4 overflow-y-auto">
           <h3 className="text-xs font-semibold text-gray-500 uppercase mb-3">Question Palette</h3>
 
-          {/* Group palette by section */}
-          {(() => {
-            const groups = [];
-            let currentSection = null;
-            let currentGroup = [];
-
-            questions.forEach((q, idx) => {
-              const section = q.section || '';
-              if (section !== currentSection) {
-                if (currentGroup.length > 0) {
-                  groups.push({ section: currentSection, items: currentGroup });
-                }
-                currentSection = section;
-                currentGroup = [{ q, idx }];
-              } else {
-                currentGroup.push({ q, idx });
-              }
-            });
-            if (currentGroup.length > 0) {
-              groups.push({ section: currentSection, items: currentGroup });
-            }
-
-            return groups.map((group, gIdx) => (
-              <div key={gIdx} className="mb-4">
-                {group.section && (
-                  <p className="text-xs font-semibold text-blue-600 mb-2 truncate">
-                    {group.section}
-                  </p>
-                )}
-                <div className="grid grid-cols-5 gap-1">
-                  {group.items.map(({ q, idx }) => (
-                    <button
-                      key={q._id}
-                      onClick={() => goToQuestion(idx)}
-                      className={`palette-btn ${getPaletteStatus(q)} ${idx === currentQIdx ? 'current' : ''}`}
-                    >
-                      {idx + 1}
-                    </button>
-                  ))}
-                </div>
+          {getPaletteGroups().map((group, gIdx) => (
+            <div key={gIdx} className="mb-4">
+              {group.section && (
+                <p className="text-xs font-semibold text-blue-600 mb-2 truncate border-b border-blue-100 pb-1">
+                  {group.section}
+                </p>
+              )}
+              <div className="grid grid-cols-5 gap-1">
+                {group.items.map(({ q, idx }) => (
+                  <button
+                    key={q._id}
+                    onClick={() => goToQuestion(idx)}
+                    className={`palette-btn ${getPaletteStatus(q)} ${idx === currentQIdx ? 'current' : ''}`}
+                  >
+                    {idx + 1}
+                  </button>
+                ))}
               </div>
-            ));
-          })()}
+            </div>
+          ))}
 
           {/* Legend */}
           <div className="mt-4 space-y-2 text-xs text-gray-500 border-t pt-3">
