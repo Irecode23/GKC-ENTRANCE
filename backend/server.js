@@ -2,6 +2,7 @@ const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '.env') });
 const express = require('express');
 const http = require('http');
+const https = require('https');
 const { Server } = require('socket.io');
 const cors = require('cors');
 const connectDB = require('./config/db');
@@ -89,7 +90,20 @@ io.on('connection', (socket) => {
 const startServer = async () => {
   await connectDB();
   const PORT = process.env.PORT || 5000;
-  server.listen(PORT, () => console.log(`GKC CBT Server running on port ${PORT}`));
+  server.listen(PORT, () => {
+    console.log(`GKC CBT Server running on port ${PORT}`);
+
+    // Keep-alive ping — prevents Render free tier from sleeping
+    if (process.env.RENDER_URL) {
+      setInterval(() => {
+        https.get(process.env.RENDER_URL, (res) => {
+          console.log(`Keep-alive ping sent. Status: ${res.statusCode}`);
+        }).on('error', (err) => {
+          console.log('Keep-alive ping failed:', err.message);
+        });
+      }, 14 * 60 * 1000); // every 14 minutes
+    }
+  });
 };
 
 startServer();
