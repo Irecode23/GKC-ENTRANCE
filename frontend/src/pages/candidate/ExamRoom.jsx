@@ -15,6 +15,7 @@ export default function ExamRoom() {
   const [subjects, setSubjects] = useState([]);
   const [activeSubjectIdx, setActiveSubjectIdx] = useState(0);
   const [questions, setQuestions] = useState([]);
+  const [questionsLoading, setQuestionsLoading] = useState(false); // NEW
   const [currentQIdx, setCurrentQIdx] = useState(0);
   const [timeLeft, setTimeLeft] = useState(7200);
   const [loading, setLoading] = useState(true);
@@ -75,7 +76,6 @@ export default function ExamRoom() {
         const { data } = await api.post('/exam/start');
         setSubjects(data.subjects);
 
-        // ── Timer recovery fix ──────────────────────────────
         if (data.recovered && data.session.startTime) {
           const elapsed = Math.floor(
             (Date.now() - new Date(data.session.startTime).getTime()) / 1000
@@ -123,10 +123,12 @@ export default function ExamRoom() {
 
   // ── Load questions ────────────────────────────────────────────
   const loadSubjectQuestions = async (subjectId) => {
+    setQuestionsLoading(true); // show loading spinner
+    setQuestions([]);          // clear old questions immediately
+    setCurrentQIdx(0);
     try {
       const { data } = await api.get(`/exam/questions/${subjectId}`);
       setQuestions(data);
-      setCurrentQIdx(0);
       const newMap = { ...answerMap };
       data.forEach((q) => {
         if (!newMap[q._id]) {
@@ -136,12 +138,13 @@ export default function ExamRoom() {
       setAnswerMap(newMap);
     } catch (err) {
       console.error('Failed to load questions', err);
+    } finally {
+      setQuestionsLoading(false); // hide loading spinner
     }
   };
 
   const switchSubject = async (idx) => {
     setActiveSubjectIdx(idx);
-    setCurrentQIdx(0);
     await loadSubjectQuestions(subjects[idx]._id);
   };
 
@@ -307,7 +310,16 @@ export default function ExamRoom() {
 
         {/* ── Question Area ─────────────────────────────────── */}
         <main className="flex-1 overflow-y-auto p-4 md:p-6">
-          {currentQuestion ? (
+
+          {/* Subject loading spinner */}
+          {questionsLoading ? (
+            <div className="flex items-center justify-center py-20">
+              <div className="text-center">
+                <div className="w-10 h-10 border-4 border-green-700 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
+                <p className="text-gray-500 text-sm">Loading questions...</p>
+              </div>
+            </div>
+          ) : currentQuestion ? (
             <div className="max-w-3xl mx-auto">
 
               {/* Section name + instruction — always shown */}
@@ -438,7 +450,9 @@ export default function ExamRoom() {
               </div>
             </div>
           ) : (
-            <div className="text-center text-gray-500 py-20">No questions loaded for this subject.</div>
+            <div className="text-center text-gray-500 py-20">
+              No questions loaded for this subject.
+            </div>
           )}
         </main>
 
@@ -446,26 +460,32 @@ export default function ExamRoom() {
         <aside className="hidden md:block w-60 bg-white border-l p-4 overflow-y-auto">
           <h3 className="text-xs font-semibold text-gray-500 uppercase mb-3">Question Palette</h3>
 
-          {getPaletteGroups().map((group, gIdx) => (
-            <div key={gIdx} className="mb-4">
-              {group.section && (
-                <p className="text-xs font-semibold text-blue-600 mb-2 truncate border-b border-blue-100 pb-1">
-                  {group.section}
-                </p>
-              )}
-              <div className="grid grid-cols-5 gap-1">
-                {group.items.map(({ q, idx }) => (
-                  <button
-                    key={q._id}
-                    onClick={() => goToQuestion(idx)}
-                    className={`palette-btn ${getPaletteStatus(q)} ${idx === currentQIdx ? 'current' : ''}`}
-                  >
-                    {idx + 1}
-                  </button>
-                ))}
-              </div>
+          {questionsLoading ? (
+            <div className="flex justify-center py-4">
+              <div className="w-6 h-6 border-2 border-green-700 border-t-transparent rounded-full animate-spin"></div>
             </div>
-          ))}
+          ) : (
+            getPaletteGroups().map((group, gIdx) => (
+              <div key={gIdx} className="mb-4">
+                {group.section && (
+                  <p className="text-xs font-semibold text-blue-600 mb-2 truncate border-b border-blue-100 pb-1">
+                    {group.section}
+                  </p>
+                )}
+                <div className="grid grid-cols-5 gap-1">
+                  {group.items.map(({ q, idx }) => (
+                    <button
+                      key={q._id}
+                      onClick={() => goToQuestion(idx)}
+                      className={`palette-btn ${getPaletteStatus(q)} ${idx === currentQIdx ? 'current' : ''}`}
+                    >
+                      {idx + 1}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))
+          )}
 
           <div className="mt-4 space-y-2 text-xs text-gray-500 border-t pt-3">
             <div className="flex items-center gap-2"><div className="w-4 h-4 rounded bg-green-500"></div> Answered</div>
