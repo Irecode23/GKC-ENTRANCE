@@ -107,9 +107,11 @@ const startExam = async (req, res) => {
       return res.status(403).json({ message: 'Examination already submitted.' });
     }
 
-    // Session recovery
+    // Session recovery — calculate time on SERVER, never trust client clock
     if (session.status === 'active' && session.startTime) {
-      const elapsed = Math.floor((Date.now() - new Date(session.startTime).getTime()) / 1000);
+      const elapsed = Math.floor(
+        (Date.now() - new Date(session.startTime).getTime()) / 1000
+      );
       const remaining = Math.max(0, session.examDuration - elapsed);
       session.timeRemaining = remaining;
       await session.save();
@@ -158,7 +160,12 @@ const startExam = async (req, res) => {
 
     await ActivityLog.create({ student: student._id, action: 'Started Examination' });
 
-    res.json({ session, subjects, recovered: false });
+    // Send server-calculated timeRemaining — never let client calculate from startTime
+    res.json({
+      session: { ...session.toObject(), timeRemaining: session.examDuration },
+      subjects,
+      recovered: false,
+    });
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
   }
@@ -183,23 +190,19 @@ const getExamQuestions = async (req, res) => {
     if (subjectOrder && subjectOrder.questions.length > 0) {
       const orderedIds = subjectOrder.questions;
 
-      // Get ALL active questions for this subject
       const allQuestions = await Question.find({ subject: subjectId, isActive: true })
         .select('-correctAnswer -questionImagePublicId');
 
       const map = {};
       allQuestions.forEach((q) => { map[q._id.toString()] = q; });
 
-      // Questions in session order
       const orderedQuestions = orderedIds
         .map((id) => map[id.toString()])
         .filter(Boolean);
 
-      // Questions NOT in session order (added after session started)
       const orderedIdSet = new Set(orderedIds.map((id) => id.toString()));
       const newQuestions = allQuestions.filter((q) => !orderedIdSet.has(q._id.toString()));
 
-      // Combine: session ordered first, then new questions sorted by section
       questions = [...orderedQuestions, ...newQuestions];
     } else {
       questions = await Question.find({ subject: subjectId, isActive: true })
@@ -207,7 +210,6 @@ const getExamQuestions = async (req, res) => {
         .sort({ section: 1, order: 1 });
     }
 
-    // Get saved answers
     const answers = await Answer.find({ student: student._id, subject: subjectId });
     const answerMap = {};
     answers.forEach((a) => {

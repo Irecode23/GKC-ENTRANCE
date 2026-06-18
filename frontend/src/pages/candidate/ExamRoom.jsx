@@ -15,7 +15,7 @@ export default function ExamRoom() {
   const [subjects, setSubjects] = useState([]);
   const [activeSubjectIdx, setActiveSubjectIdx] = useState(0);
   const [questions, setQuestions] = useState([]);
-  const [questionsLoading, setQuestionsLoading] = useState(false); // NEW
+  const [questionsLoading, setQuestionsLoading] = useState(false);
   const [currentQIdx, setCurrentQIdx] = useState(0);
   const [timeLeft, setTimeLeft] = useState(7200);
   const [loading, setLoading] = useState(true);
@@ -76,14 +76,12 @@ export default function ExamRoom() {
         const { data } = await api.post('/exam/start');
         setSubjects(data.subjects);
 
-        if (data.recovered && data.session.startTime) {
-          const elapsed = Math.floor(
-            (Date.now() - new Date(data.session.startTime).getTime()) / 1000
-          );
-          const remaining = Math.max(0, (data.session.examDuration || 7200) - elapsed);
-          setTimeLeft(remaining);
+        // ── Always use SERVER time — never trust client PC clock ──
+        const serverTime = data.session?.timeRemaining;
+        if (serverTime !== undefined && serverTime !== null && serverTime > 0) {
+          setTimeLeft(serverTime);
         } else {
-          setTimeLeft(data.session.examDuration || 7200);
+          setTimeLeft(data.session?.examDuration || 7200);
         }
 
         if (data.subjects.length > 0) {
@@ -123,8 +121,8 @@ export default function ExamRoom() {
 
   // ── Load questions ────────────────────────────────────────────
   const loadSubjectQuestions = async (subjectId) => {
-    setQuestionsLoading(true); // show loading spinner
-    setQuestions([]);          // clear old questions immediately
+    setQuestionsLoading(true);
+    setQuestions([]);
     setCurrentQIdx(0);
     try {
       const { data } = await api.get(`/exam/questions/${subjectId}`);
@@ -139,7 +137,7 @@ export default function ExamRoom() {
     } catch (err) {
       console.error('Failed to load questions', err);
     } finally {
-      setQuestionsLoading(false); // hide loading spinner
+      setQuestionsLoading(false);
     }
   };
 
@@ -310,8 +308,6 @@ export default function ExamRoom() {
 
         {/* ── Question Area ─────────────────────────────────── */}
         <main className="flex-1 overflow-y-auto p-4 md:p-6">
-
-          {/* Subject loading spinner */}
           {questionsLoading ? (
             <div className="flex items-center justify-center py-20">
               <div className="text-center">
