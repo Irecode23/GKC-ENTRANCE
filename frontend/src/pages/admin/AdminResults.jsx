@@ -33,10 +33,10 @@ export default function AdminResults() {
     setExporting(studentId);
     try {
       const response = await api.get(`/results/${studentId}/export`, { responseType: 'blob' });
-      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const url = window.URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }));
       const a = document.createElement('a');
       a.href = url;
-      a.download = `GKC_Result_${examNo.replace(/\//g, '_')}.xlsx`;
+      a.download = `GKC_Result_${examNo.replace(/\//g, '_')}.pdf`;
       a.click();
       window.URL.revokeObjectURL(url);
     } catch (err) {
@@ -210,7 +210,7 @@ export default function AdminResults() {
                         disabled={exporting === r.student._id}
                         className="px-3 py-1 bg-green-50 text-green-700 text-xs rounded-lg hover:bg-green-100 font-medium disabled:opacity-60"
                       >
-                        {exporting === r.student._id ? '...' : '⬇ Excel'}
+                        {exporting === r.student._id ? '...' : '⬇ PDF'}
                       </button>
                     </td>
                   </tr>

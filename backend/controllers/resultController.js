@@ -1,6 +1,9 @@
 const Result = require('../models/Result');
 const Student = require('../models/Student');
 const ExcelJS = require('exceljs');
+const PDFDocument = require('pdfkit');
+const path = require('path');
+const fs = require('fs');
 
 // Get all results
 const getAllResults = async (req, res) => {
@@ -26,7 +29,7 @@ const getStudentResult = async (req, res) => {
   }
 };
 
-// Update result status (ADMITTED / RESIT)
+// Update result status
 const updateResultStatus = async (req, res) => {
   try {
     const { status } = req.body;
@@ -76,7 +79,7 @@ const getAnalytics = async (req, res) => {
   }
 };
 
-// Export a single student result to Excel matching the GKC template exactly
+// Export single student result as PDF
 const exportSingleResult = async (req, res) => {
   try {
     const result = await Result.findOne({ student: req.params.studentId })
@@ -85,189 +88,200 @@ const exportSingleResult = async (req, res) => {
     if (!result) return res.status(404).json({ message: 'Result not found' });
 
     const student = result.student;
-    const wb = new ExcelJS.Workbook();
-    const ws = wb.addWorksheet('Result');
+    const doc = new PDFDocument({ size: 'A4', margin: 50 });
 
-    // ── Styles ────────────────────────────────────────────────────
-    const headerFont = { name: 'Times New Roman', bold: true, size: 12 };
-    const bodyFont = { name: 'Times New Roman', size: 11 };
-    const centerAlign = { horizontal: 'center', vertical: 'middle' };
-    const leftAlign = { horizontal: 'left', vertical: 'middle' };
-    const thinBorder = {
-      top: { style: 'thin' }, left: { style: 'thin' },
-      bottom: { style: 'thin' }, right: { style: 'thin' },
-    };
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename=GKC_Result_${student.studentId.replace(/\//g, '_')}.pdf`);
+    doc.pipe(res);
 
-    ws.columns = [
-      { width: 6 }, { width: 32 }, { width: 5 }, { width: 5 }, { width: 5 }, { width: 16 }
-    ];
+    const pageWidth = 595.28;
+    const margin = 50;
+    const contentWidth = pageWidth - margin * 2;
 
-    // Row 1: School name
-    ws.mergeCells('A1:F1');
-    ws.getCell('A1').value = 'GREAT KHILAFAT COLLEGE';
-    ws.getCell('A1').font = { name: 'Times New Roman', bold: true, size: 14 };
-    ws.getCell('A1').alignment = centerAlign;
-
-    // Row 2: Formerly
-    ws.mergeCells('A2:F2');
-    ws.getCell('A2').value = 'FORMERLY MUSLIM CHILDREN PRIVATE SCHOOL (MCPS)';
-    ws.getCell('A2').font = { name: 'Times New Roman', size: 11 };
-    ws.getCell('A2').alignment = centerAlign;
-
-    // Row 3: Address
-    ws.mergeCells('A3:F3');
-    ws.getCell('A3').value = '81B, SIMPSON STREET,  YABA, LAGOS';
-    ws.getCell('A3').font = bodyFont;
-    ws.getCell('A3').alignment = centerAlign;
-
-    // Row 4: Phone
-    ws.mergeCells('A4:F4');
-    ws.getCell('A4').value = '09068842565, 08023339691';
-    ws.getCell('A4').font = bodyFont;
-    ws.getCell('A4').alignment = centerAlign;
-
-    // Row 5: Email
-    ws.mergeCells('A5:F5');
-    ws.getCell('A5').value = 'greatkhilafatcollege@gmail.com';
-    ws.getCell('A5').font = bodyFont;
-    ws.getCell('A5').alignment = centerAlign;
-
-    // Row 6: blank
-    ws.getRow(6).height = 6;
-
-    // Row 7: Title
-    ws.mergeCells('A7:F7');
-    ws.getCell('A7').value = '2025/2026 ENTRANCE EXAMINATION RESULTS';
-    ws.getCell('A7').font = { name: 'Times New Roman', bold: true, size: 12, underline: true };
-    ws.getCell('A7').alignment = centerAlign;
-
-    // Row 8: Candidate Info heading
-    ws.mergeCells('A8:F8');
-    ws.getCell('A8').value = "CANDIDATE'S INFORMATION";
-    ws.getCell('A8').font = headerFont;
-    ws.getCell('A8').alignment = centerAlign;
-    ws.getCell('A8').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9D9D9' } };
-
-    // Candidate info rows
-    const infoRows = [
-      ['NAME', student.fullName],
-      ['DATE OF BIRTH (DD/MM/YYYY)', student.dateOfBirth
-        ? new Date(student.dateOfBirth).toLocaleDateString('en-GB') : ''],
-      ['GENDER', student.gender],
-      ['EXAMINATION NUMBER', student.studentId],
-      ['CLASS SEEKING ADMISSION INTO', student.classSeekingAdmission || ''],
-    ];
-
-    let rowIndex = 9;
-    for (const [label, value] of infoRows) {
-      ws.mergeCells(`A${rowIndex}:B${rowIndex}`);
-      ws.getCell(`A${rowIndex}`).value = label;
-      ws.getCell(`A${rowIndex}`).font = headerFont;
-      ws.getCell(`A${rowIndex}`).alignment = leftAlign;
-      ws.getCell(`A${rowIndex}`).border = thinBorder;
-
-      ws.mergeCells(`C${rowIndex}:F${rowIndex}`);
-      ws.getCell(`C${rowIndex}`).value = value;
-      ws.getCell(`C${rowIndex}`).font = bodyFont;
-      ws.getCell(`C${rowIndex}`).alignment = leftAlign;
-      ws.getCell(`C${rowIndex}`).border = thinBorder;
-
-      ws.getRow(rowIndex).height = 20;
-      rowIndex++;
+    // ── Logo ──────────────────────────────────────────────────
+    const logoPath = path.join(__dirname, '../logo.png');
+    if (fs.existsSync(logoPath)) {
+      doc.image(logoPath, pageWidth / 2 - 40, 40, { width: 80 });
     }
 
-    rowIndex++; // blank row
+    let y = 130;
 
-    // Results section header
-    ws.mergeCells(`A${rowIndex}:F${rowIndex}`);
-    ws.getCell(`A${rowIndex}`).value = 'RESULTS';
-    ws.getCell(`A${rowIndex}`).font = headerFont;
-    ws.getCell(`A${rowIndex}`).alignment = centerAlign;
-    ws.getCell(`A${rowIndex}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9D9D9' } };
-    rowIndex++;
+    // ── School Header ─────────────────────────────────────────
+    doc.font('Helvetica-Bold').fontSize(16).fillColor('#1a1a1a')
+      .text('GREAT KHILAFAT COLLEGE', margin, y, { align: 'center', width: contentWidth });
+    y += 22;
 
-    // Table header row 1
-    const colHeaders1 = ['S/N', 'SUBJECTS', '', '', '', 'OBTAINABLE MARKS'];
-    colHeaders1.forEach((h, i) => {
-      const col = String.fromCharCode(65 + i);
-      ws.getCell(`${col}${rowIndex}`).value = h;
-      ws.getCell(`${col}${rowIndex}`).font = headerFont;
-      ws.getCell(`${col}${rowIndex}`).alignment = centerAlign;
-      ws.getCell(`${col}${rowIndex}`).border = thinBorder;
-      ws.getCell(`${col}${rowIndex}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFBDD7EE' } };
+    doc.font('Helvetica').fontSize(10).fillColor('#cc0000')
+      .text('FORMERLY MUSLIM CHILDREN PRIVATE SCHOOL (MCPS)', margin, y, { align: 'center', width: contentWidth });
+    y += 16;
+
+    doc.fillColor('#333333').fontSize(10)
+      .text('81B, Simpson Street, Yaba, Lagos', margin, y, { align: 'center', width: contentWidth });
+    y += 14;
+
+    doc.text('09068842565, 08023339691', margin, y, { align: 'center', width: contentWidth });
+    y += 14;
+
+    doc.text('greatkhilafatcollege@gmail.com', margin, y, { align: 'center', width: contentWidth });
+    y += 20;
+
+    // ── Divider ───────────────────────────────────────────────
+    doc.moveTo(margin, y).lineTo(pageWidth - margin, y).strokeColor('#cccccc').lineWidth(1).stroke();
+    y += 14;
+
+    // ── Exam Title ────────────────────────────────────────────
+    doc.font('Helvetica-Bold').fontSize(12).fillColor('#1a5276')
+      .text('2025/2026 ENTRANCE EXAMINATION RESULTS', margin, y, { align: 'center', width: contentWidth, underline: true });
+    y += 24;
+
+    // ── Candidate Info Section ────────────────────────────────
+    const sectionHeaderBg = '#1a5276';
+    const rowHeight = 26;
+    const labelWidth = 200;
+    const valueWidth = contentWidth - labelWidth;
+
+    // Section header
+    doc.rect(margin, y, contentWidth, rowHeight).fill(sectionHeaderBg);
+    doc.font('Helvetica-Bold').fontSize(11).fillColor('white')
+      .text("CANDIDATE'S INFORMATION", margin, y + 7, { align: 'center', width: contentWidth });
+    y += rowHeight;
+
+    const infoRows = [
+      ['NAME', student.fullName],
+      ['DATE OF BIRTH (DD/MM/YYYY)', student.dateOfBirth ? new Date(student.dateOfBirth).toLocaleDateString('en-GB') : '—'],
+      ['GENDER', student.gender],
+      ['EXAMINATION NUMBER', student.studentId],
+      ['CLASS SEEKING ADMISSION INTO', student.classSeekingAdmission || '—'],
+    ];
+
+    infoRows.forEach((row, i) => {
+      const bg = i % 2 === 0 ? '#eaf2fb' : '#ffffff';
+      doc.rect(margin, y, contentWidth, rowHeight).fill(bg);
+
+      // Label
+      doc.rect(margin, y, labelWidth, rowHeight).stroke('#cccccc');
+      doc.font('Helvetica-Bold').fontSize(10).fillColor('#1a1a1a')
+        .text(row[0], margin + 6, y + 8, { width: labelWidth - 10 });
+
+      // Value
+      doc.rect(margin + labelWidth, y, valueWidth, rowHeight).stroke('#cccccc');
+      doc.font('Helvetica').fontSize(10).fillColor('#1a1a1a')
+        .text(row[1], margin + labelWidth + 6, y + 8, { width: valueWidth - 10 });
+
+      y += rowHeight;
     });
-    rowIndex++;
 
-    // Table header row 2: MARKS OBTAINED | PERCENTAGE
-    const colHeaders2 = ['', '', '', '', '', 'MARKS OBTAINED'];
-    ws.getCell(`F${rowIndex}`).value = 'MARKS OBTAINED';
-    ws.getCell(`F${rowIndex}`).font = headerFont;
-    ws.getCell(`F${rowIndex}`).alignment = centerAlign;
-    ws.getCell(`F${rowIndex}`).border = thinBorder;
-    ws.getCell(`F${rowIndex}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFBDD7EE' } };
-    // Add percentage col — extend to G
-    ws.getColumn(7).width = 16;
-    ws.getCell(`G${rowIndex - 1}`).value = 'PERCENTAGE (%)';
-    ws.getCell(`G${rowIndex - 1}`).font = headerFont;
-    ws.getCell(`G${rowIndex - 1}`).alignment = centerAlign;
-    ws.getCell(`G${rowIndex - 1}`).border = thinBorder;
-    ws.getCell(`G${rowIndex - 1}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFBDD7EE' } };
-    rowIndex++;
+    y += 16;
 
-    // Subject result rows
+    // ── Results Section ───────────────────────────────────────
+    doc.rect(margin, y, contentWidth, rowHeight).fill(sectionHeaderBg);
+    doc.font('Helvetica-Bold').fontSize(11).fillColor('white')
+      .text('RESULTS', margin, y + 7, { align: 'center', width: contentWidth });
+    y += rowHeight;
+
+    // Table header
+    const col1 = 35;   // S/N
+    const col2 = 220;  // Subject
+    const col3 = 90;   // Obtainable
+    const col4 = 90;   // Marks Obtained
+    const col5 = contentWidth - col1 - col2 - col3 - col4; // Percentage
+
+    const tableHeaderY = y;
+    doc.rect(margin, y, contentWidth, rowHeight * 2).fill('#bdd7ee');
+
+    // S/N
+    doc.rect(margin, y, col1, rowHeight * 2).stroke('#999999');
+    doc.font('Helvetica-Bold').fontSize(9).fillColor('#1a1a1a')
+      .text('S/N', margin + 2, y + 10, { width: col1 - 4, align: 'center' });
+
+    // SUBJECTS
+    doc.rect(margin + col1, y, col2, rowHeight * 2).stroke('#999999');
+    doc.text('SUBJECTS', margin + col1 + 4, y + 10, { width: col2 - 8, align: 'center' });
+
+    // OBTAINABLE MARKS
+    doc.rect(margin + col1 + col2, y, col3, rowHeight).stroke('#999999');
+    doc.text('OBTAINABLE', margin + col1 + col2 + 2, y + 2, { width: col3 - 4, align: 'center' });
+    doc.text('MARKS', margin + col1 + col2 + 2, y + 12, { width: col3 - 4, align: 'center' });
+
+    // MARKS OBTAINED
+    doc.rect(margin + col1 + col2 + col3, y, col4, rowHeight).stroke('#999999');
+    doc.text('MARKS', margin + col1 + col2 + col3 + 2, y + 2, { width: col4 - 4, align: 'center' });
+    doc.text('OBTAINED', margin + col1 + col2 + col3 + 2, y + 12, { width: col4 - 4, align: 'center' });
+
+    // PERCENTAGE
+    doc.rect(margin + col1 + col2 + col3 + col4, y, col5, rowHeight).stroke('#999999');
+    doc.text('PERCENTAGE', margin + col1 + col2 + col3 + col4 + 2, y + 2, { width: col5 - 4, align: 'center' });
+    doc.text('(%)', margin + col1 + col2 + col3 + col4 + 2, y + 12, { width: col5 - 4, align: 'center' });
+
+    y += rowHeight;
+
+    // Second header row borders
+    doc.rect(margin + col1 + col2, y, col3, rowHeight).stroke('#999999');
+    doc.rect(margin + col1 + col2 + col3, y, col4, rowHeight).stroke('#999999');
+    doc.rect(margin + col1 + col2 + col3 + col4, y, col5, rowHeight).stroke('#999999');
+    y += rowHeight;
+
+    // Subject rows
     result.subjectResults.forEach((sr, idx) => {
-      ws.getCell(`A${rowIndex}`).value = idx + 1;
-      ws.getCell(`B${rowIndex}`).value = sr.subjectName.toUpperCase();
-      ws.getCell(`F${rowIndex - 1}`).value = sr.obtainableMarks; // obtainable
-      ws.getCell(`F${rowIndex}`).value = sr.marksObtained;
-      ws.getCell(`G${rowIndex}`).value = `${sr.percentage}%`;
+      const bg = idx % 2 === 0 ? '#ffffff' : '#f5f5f5';
+      doc.rect(margin, y, contentWidth, rowHeight).fill(bg);
 
-      ['A', 'B', 'F', 'G'].forEach((col) => {
-        ws.getCell(`${col}${rowIndex}`).font = bodyFont;
-        ws.getCell(`${col}${rowIndex}`).alignment = centerAlign;
-        ws.getCell(`${col}${rowIndex}`).border = thinBorder;
-      });
-      ws.getCell(`B${rowIndex}`).alignment = leftAlign;
-      ws.getRow(rowIndex).height = 22;
-      rowIndex++;
+      doc.rect(margin, y, col1, rowHeight).stroke('#cccccc');
+      doc.font('Helvetica').fontSize(10).fillColor('#1a1a1a')
+        .text(String(idx + 1), margin + 2, y + 8, { width: col1 - 4, align: 'center' });
+
+      doc.rect(margin + col1, y, col2, rowHeight).stroke('#cccccc');
+      doc.text(sr.subjectName.toUpperCase(), margin + col1 + 6, y + 8, { width: col2 - 10 });
+
+      doc.rect(margin + col1 + col2, y, col3, rowHeight).stroke('#cccccc');
+      doc.text(String(sr.obtainableMarks), margin + col1 + col2 + 2, y + 8, { width: col3 - 4, align: 'center' });
+
+      doc.rect(margin + col1 + col2 + col3, y, col4, rowHeight).stroke('#cccccc');
+      doc.text(String(sr.marksObtained), margin + col1 + col2 + col3 + 2, y + 8, { width: col4 - 4, align: 'center' });
+
+      doc.rect(margin + col1 + col2 + col3 + col4, y, col5, rowHeight).stroke('#cccccc');
+      doc.text(`${sr.percentage}%`, margin + col1 + col2 + col3 + col4 + 2, y + 8, { width: col5 - 4, align: 'center' });
+
+      y += rowHeight;
     });
 
     // Total row
-    ws.mergeCells(`A${rowIndex}:E${rowIndex}`);
-    ws.getCell(`A${rowIndex}`).value = 'TOTAL (AVERAGE)';
-    ws.getCell(`A${rowIndex}`).font = headerFont;
-    ws.getCell(`A${rowIndex}`).alignment = centerAlign;
-    ws.getCell(`A${rowIndex}`).border = thinBorder;
-    ws.getCell(`F${rowIndex}`).value = result.totalObtainable;
-    ws.getCell(`F${rowIndex + 1}`).value = result.totalMarksObtained;
-    ws.getCell(`G${rowIndex}`).value = `${result.totalPercentage}%`;
-    ['F', 'G'].forEach((col) => {
-      ws.getCell(`${col}${rowIndex}`).font = headerFont;
-      ws.getCell(`${col}${rowIndex}`).alignment = centerAlign;
-      ws.getCell(`${col}${rowIndex}`).border = thinBorder;
-    });
-    ws.getRow(rowIndex).height = 22;
-    rowIndex += 2;
+    doc.rect(margin, y, contentWidth, rowHeight).fill('#dce6f1');
+    doc.rect(margin, y, col1 + col2, rowHeight).stroke('#999999');
+    doc.font('Helvetica-Bold').fontSize(10).fillColor('#1a1a1a')
+      .text('TOTAL', margin + 4, y + 8, { width: col1 + col2 - 8, align: 'center' });
+
+    doc.rect(margin + col1 + col2, y, col3, rowHeight).stroke('#999999');
+    doc.text(String(result.totalObtainable), margin + col1 + col2 + 2, y + 8, { width: col3 - 4, align: 'center' });
+
+    doc.rect(margin + col1 + col2 + col3, y, col4, rowHeight).stroke('#999999');
+    doc.text(String(result.totalMarksObtained), margin + col1 + col2 + col3 + 2, y + 8, { width: col4 - 4, align: 'center' });
+
+    doc.rect(margin + col1 + col2 + col3 + col4, y, col5, rowHeight).stroke('#999999');
+    doc.text(`${result.totalPercentage}%`, margin + col1 + col2 + col3 + col4 + 2, y + 8, { width: col5 - 4, align: 'center' });
+
+    y += rowHeight + 16;
 
     // Status row
-    ws.mergeCells(`A${rowIndex}:E${rowIndex}`);
-    ws.getCell(`A${rowIndex}`).value = 'STATUS';
-    ws.getCell(`A${rowIndex}`).font = headerFont;
-    ws.getCell(`A${rowIndex}`).alignment = centerAlign;
-    ws.getCell(`A${rowIndex}`).border = thinBorder;
-    ws.mergeCells(`F${rowIndex}:G${rowIndex}`);
-    ws.getCell(`F${rowIndex}`).value = result.status;
-    ws.getCell(`F${rowIndex}`).font = { ...headerFont, color: { argb: result.status === 'ADMITTED' ? 'FF006400' : 'FFCC0000' } };
-    ws.getCell(`F${rowIndex}`).alignment = centerAlign;
-    ws.getCell(`F${rowIndex}`).border = thinBorder;
-    ws.getRow(rowIndex).height = 22;
+    doc.rect(margin, y, contentWidth, rowHeight + 4).fill(result.status === 'ADMITTED' ? '#e8f5e9' : '#fdecea');
+    doc.rect(margin, y, col1 + col2, rowHeight + 4).stroke('#999999');
+    doc.font('Helvetica-Bold').fontSize(11).fillColor('#1a1a1a')
+      .text('STATUS', margin + 4, y + 9, { width: col1 + col2 - 8, align: 'center' });
 
-    // Send file
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', `attachment; filename=GKC_Result_${student.studentId.replace(/\//g, '_')}.xlsx`);
+    doc.rect(margin + col1 + col2, y, contentWidth - col1 - col2, rowHeight + 4).stroke('#999999');
+    const statusColor = result.status === 'ADMITTED' ? '#006400' : '#cc0000';
+    doc.font('Helvetica-Bold').fontSize(13).fillColor(statusColor)
+      .text(result.status, margin + col1 + col2 + 4, y + 8, { width: contentWidth - col1 - col2 - 8, align: 'center' });
 
-    await wb.xlsx.write(res);
-    res.end();
+    y += rowHeight + 24;
+
+    // ── Footer ────────────────────────────────────────────────
+    doc.moveTo(margin, y).lineTo(pageWidth - margin, y).strokeColor('#cccccc').lineWidth(1).stroke();
+    y += 10;
+    doc.font('Helvetica').fontSize(8).fillColor('#888888')
+      .text(`Generated on ${new Date().toLocaleDateString('en-GB')} | Great Khilafat College CBT System`, margin, y, { align: 'center', width: contentWidth });
+
+    doc.end();
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
   }
@@ -289,7 +303,6 @@ const exportAllResults = async (req, res) => {
     const centerAlign = { horizontal: 'center', vertical: 'middle' };
     const thinBorder = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
 
-    // Dynamic headers based on subjects in first result
     const subjects = results[0].subjectResults.map((s) => s.subjectName);
 
     ws.columns = [
