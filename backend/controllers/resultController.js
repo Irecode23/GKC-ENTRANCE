@@ -119,10 +119,10 @@ const exportSingleResult = async (req, res) => {
       .text('81B, Simpson Street, Yaba, Lagos', margin, y, { align: 'center', width: contentWidth });
     y += 14;
 
-    doc.text('09068842565, 08023339691', margin, y, { align: 'center', width: contentWidth });
+    doc.text('08052255976, 08023339691, 08123030549', margin, y, { align: 'center', width: contentWidth });
     y += 14;
 
-    doc.text('greatkhilafatcollege@gmail.com', margin, y, { align: 'center', width: contentWidth });
+    doc.text('thegreatkhilafatcollege@gmail.com', margin, y, { align: 'center', width: contentWidth });
     y += 20;
 
     // ── Divider ───────────────────────────────────────────────
