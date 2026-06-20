@@ -62,7 +62,9 @@ const getAnalytics = async (req, res) => {
 
     const highest = scores.length ? Math.max(...scores) : 0;
     const lowest = scores.length ? Math.min(...scores) : 0;
-    const average = scores.length ? parseFloat((scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(2)) : 0;
+    const average = scores.length
+      ? parseFloat((scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(2))
+      : 0;
 
     res.json({
       totalRegistered,
@@ -119,10 +121,10 @@ const exportSingleResult = async (req, res) => {
       .text('81B, Simpson Street, Yaba, Lagos', margin, y, { align: 'center', width: contentWidth });
     y += 14;
 
-    doc.text('08052255976, 08023339691, 08123030549', margin, y, { align: 'center', width: contentWidth });
+    doc.text('09068842565, 08023339691', margin, y, { align: 'center', width: contentWidth });
     y += 14;
 
-    doc.text('thegreatkhilafatcollege@gmail.com', margin, y, { align: 'center', width: contentWidth });
+    doc.text('greatkhilafatcollege@gmail.com', margin, y, { align: 'center', width: contentWidth });
     y += 20;
 
     // ── Divider ───────────────────────────────────────────────
@@ -148,7 +150,8 @@ const exportSingleResult = async (req, res) => {
 
     const infoRows = [
       ['NAME', student.fullName],
-      ['DATE OF BIRTH (DD/MM/YYYY)', student.dateOfBirth ? new Date(student.dateOfBirth).toLocaleDateString('en-GB') : '—'],
+      ['DATE OF BIRTH (DD/MM/YYYY)', student.dateOfBirth
+        ? new Date(student.dateOfBirth).toLocaleDateString('en-GB') : '—'],
       ['GENDER', student.gender],
       ['EXAMINATION NUMBER', student.studentId],
       ['CLASS SEEKING ADMISSION INTO', student.classSeekingAdmission || '—'],
@@ -158,12 +161,10 @@ const exportSingleResult = async (req, res) => {
       const bg = i % 2 === 0 ? '#eaf2fb' : '#ffffff';
       doc.rect(margin, y, contentWidth, rowHeight).fill(bg);
 
-      // Label
       doc.rect(margin, y, labelWidth, rowHeight).stroke('#cccccc');
       doc.font('Helvetica-Bold').fontSize(10).fillColor('#1a1a1a')
         .text(row[0], margin + 6, y + 8, { width: labelWidth - 10 });
 
-      // Value
       doc.rect(margin + labelWidth, y, valueWidth, rowHeight).stroke('#cccccc');
       doc.font('Helvetica').fontSize(10).fillColor('#1a1a1a')
         .text(row[1], margin + labelWidth + 6, y + 8, { width: valueWidth - 10 });
@@ -179,39 +180,39 @@ const exportSingleResult = async (req, res) => {
       .text('RESULTS', margin, y + 7, { align: 'center', width: contentWidth });
     y += rowHeight;
 
-    // Table header
-    const col1 = 35;   // S/N
-    const col2 = 220;  // Subject
-    const col3 = 90;   // Obtainable
-    const col4 = 90;   // Marks Obtained
-    const col5 = contentWidth - col1 - col2 - col3 - col4; // Percentage
+    // ── Column widths — fixed so PERCENTAGE fits ──────────────
+    const col1 = 30;   // S/N
+    const col2 = 200;  // Subject
+    const col3 = 85;   // Obtainable Marks
+    const col4 = 85;   // Marks Obtained
+    const col5 = contentWidth - col1 - col2 - col3 - col4; // Percentage (~95)
 
-    const tableHeaderY = y;
+    // Table header — double row height
     doc.rect(margin, y, contentWidth, rowHeight * 2).fill('#bdd7ee');
 
-    // S/N
+    // S/N — spans 2 rows
     doc.rect(margin, y, col1, rowHeight * 2).stroke('#999999');
     doc.font('Helvetica-Bold').fontSize(9).fillColor('#1a1a1a')
-      .text('S/N', margin + 2, y + 10, { width: col1 - 4, align: 'center' });
+      .text('S/N', margin + 2, y + 16, { width: col1 - 4, align: 'center' });
 
-    // SUBJECTS
+    // SUBJECTS — spans 2 rows
     doc.rect(margin + col1, y, col2, rowHeight * 2).stroke('#999999');
-    doc.text('SUBJECTS', margin + col1 + 4, y + 10, { width: col2 - 8, align: 'center' });
+    doc.text('SUBJECTS', margin + col1 + 4, y + 16, { width: col2 - 8, align: 'center' });
 
-    // OBTAINABLE MARKS
+    // OBTAINABLE MARKS — top row only
     doc.rect(margin + col1 + col2, y, col3, rowHeight).stroke('#999999');
-    doc.text('OBTAINABLE', margin + col1 + col2 + 2, y + 2, { width: col3 - 4, align: 'center' });
-    doc.text('MARKS', margin + col1 + col2 + 2, y + 12, { width: col3 - 4, align: 'center' });
+    doc.text('OBTAINABLE', margin + col1 + col2 + 2, y + 3, { width: col3 - 4, align: 'center' });
+    doc.text('MARKS', margin + col1 + col2 + 2, y + 13, { width: col3 - 4, align: 'center' });
 
-    // MARKS OBTAINED
+    // MARKS OBTAINED — top row only
     doc.rect(margin + col1 + col2 + col3, y, col4, rowHeight).stroke('#999999');
-    doc.text('MARKS', margin + col1 + col2 + col3 + 2, y + 2, { width: col4 - 4, align: 'center' });
-    doc.text('OBTAINED', margin + col1 + col2 + col3 + 2, y + 12, { width: col4 - 4, align: 'center' });
+    doc.text('MARKS', margin + col1 + col2 + col3 + 2, y + 3, { width: col4 - 4, align: 'center' });
+    doc.text('OBTAINED', margin + col1 + col2 + col3 + 2, y + 13, { width: col4 - 4, align: 'center' });
 
-    // PERCENTAGE
+    // PERCENTAGE — top row only
     doc.rect(margin + col1 + col2 + col3 + col4, y, col5, rowHeight).stroke('#999999');
-    doc.text('PERCENTAGE', margin + col1 + col2 + col3 + col4 + 2, y + 2, { width: col5 - 4, align: 'center' });
-    doc.text('(%)', margin + col1 + col2 + col3 + col4 + 2, y + 12, { width: col5 - 4, align: 'center' });
+    doc.text('PERCENTAGE', margin + col1 + col2 + col3 + col4 + 2, y + 3, { width: col5 - 4, align: 'center' });
+    doc.text('(%)', margin + col1 + col2 + col3 + col4 + 2, y + 13, { width: col5 - 4, align: 'center' });
 
     y += rowHeight;
 
@@ -263,7 +264,8 @@ const exportSingleResult = async (req, res) => {
     y += rowHeight + 16;
 
     // Status row
-    doc.rect(margin, y, contentWidth, rowHeight + 4).fill(result.status === 'ADMITTED' ? '#e8f5e9' : '#fdecea');
+    doc.rect(margin, y, contentWidth, rowHeight + 4)
+      .fill(result.status === 'ADMITTED' ? '#e8f5e9' : '#fdecea');
     doc.rect(margin, y, col1 + col2, rowHeight + 4).stroke('#999999');
     doc.font('Helvetica-Bold').fontSize(11).fillColor('#1a1a1a')
       .text('STATUS', margin + 4, y + 9, { width: col1 + col2 - 8, align: 'center' });
@@ -271,7 +273,10 @@ const exportSingleResult = async (req, res) => {
     doc.rect(margin + col1 + col2, y, contentWidth - col1 - col2, rowHeight + 4).stroke('#999999');
     const statusColor = result.status === 'ADMITTED' ? '#006400' : '#cc0000';
     doc.font('Helvetica-Bold').fontSize(13).fillColor(statusColor)
-      .text(result.status, margin + col1 + col2 + 4, y + 8, { width: contentWidth - col1 - col2 - 8, align: 'center' });
+      .text(result.status, margin + col1 + col2 + 4, y + 8, {
+        width: contentWidth - col1 - col2 - 8,
+        align: 'center',
+      });
 
     y += rowHeight + 24;
 
@@ -279,7 +284,10 @@ const exportSingleResult = async (req, res) => {
     doc.moveTo(margin, y).lineTo(pageWidth - margin, y).strokeColor('#cccccc').lineWidth(1).stroke();
     y += 10;
     doc.font('Helvetica').fontSize(8).fillColor('#888888')
-      .text(`Generated on ${new Date().toLocaleDateString('en-GB')} | Great Khilafat College CBT System`, margin, y, { align: 'center', width: contentWidth });
+      .text(
+        `Generated on ${new Date().toLocaleDateString('en-GB')} | Great Khilafat College CBT System`,
+        margin, y, { align: 'center', width: contentWidth }
+      );
 
     doc.end();
   } catch (error) {
@@ -301,7 +309,10 @@ const exportAllResults = async (req, res) => {
     const headerFont = { name: 'Times New Roman', bold: true, size: 11 };
     const bodyFont = { name: 'Times New Roman', size: 10 };
     const centerAlign = { horizontal: 'center', vertical: 'middle' };
-    const thinBorder = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+    const thinBorder = {
+      top: { style: 'thin' }, left: { style: 'thin' },
+      bottom: { style: 'thin' }, right: { style: 'thin' },
+    };
 
     const subjects = results[0].subjectResults.map((s) => s.subjectName);
 
@@ -350,4 +361,11 @@ const exportAllResults = async (req, res) => {
   }
 };
 
-module.exports = { getAllResults, getStudentResult, updateResultStatus, getAnalytics, exportSingleResult, exportAllResults };
+module.exports = {
+  getAllResults,
+  getStudentResult,
+  updateResultStatus,
+  getAnalytics,
+  exportSingleResult,
+  exportAllResults,
+};
