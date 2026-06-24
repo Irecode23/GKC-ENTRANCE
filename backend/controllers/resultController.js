@@ -133,7 +133,7 @@ const exportSingleResult = async (req, res) => {
 
     // ── Exam Title ────────────────────────────────────────────
     doc.font('Helvetica-Bold').fontSize(12).fillColor('#1a5276')
-      .text('2025/2026 ENTRANCE EXAMINATION RESULTS', margin, y, { align: 'center', width: contentWidth, underline: true });
+      .text('2026/2027 ENTRANCE EXAMINATION RESULTS', margin, y, { align: 'center', width: contentWidth, underline: true });
     y += 24;
 
     // ── Candidate Info Section ────────────────────────────────
@@ -285,7 +285,7 @@ const exportSingleResult = async (req, res) => {
     y += 10;
     doc.font('Helvetica').fontSize(8).fillColor('#888888')
       .text(
-        `Generated on ${new Date().toLocaleDateString('en-GB')} | Great Khilafat College CBT System`,
+        `Generated on ${new Date().toLocaleDateString('en-GB')} | Great Khilafat College CBT System developed by byteacademy(08080176384) `,
         margin, y, { align: 'center', width: contentWidth }
       );
 
